@@ -1,0 +1,8 @@
+# roblox std 파일은 저장소에 커밋하지 않는다.
+# 최초 1회: `selene generate-roblox-std` → roblox.toml 생성 (.gitignore 처리됨)
+std = "roblox"
+
+[lints]
+# Rojo 프로젝트에서 자주 오탐이 나는 규칙 완화
+mixed_table = "warn"
+shadowing = "warn"

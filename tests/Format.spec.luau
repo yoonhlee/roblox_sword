@@ -1,0 +1,57 @@
+--!strict
+local t = require("./harness")
+local Format = require("../src/shared/Pure/Format")
+
+t.describe("Format.comma", function()
+	t.it("세 자리마다 쉼표를 넣는다", function()
+		t.expectEqual(Format.comma(0), "0")
+		t.expectEqual(Format.comma(7), "7")
+		t.expectEqual(Format.comma(100), "100")
+		t.expectEqual(Format.comma(1000), "1,000")
+		t.expectEqual(Format.comma(999999), "999,999")
+		t.expectEqual(Format.comma(1234567), "1,234,567")
+	end)
+
+	t.it("음수 부호를 유지한다", function()
+		t.expectEqual(Format.comma(-1500), "-1,500")
+	end)
+
+	t.it("소수는 반올림한다", function()
+		t.expectEqual(Format.comma(1234.6), "1,235")
+		t.expectEqual(Format.comma(1234.4), "1,234")
+	end)
+end)
+
+t.describe("Format.percent", function()
+	t.it("정수는 소수점을 생략한다", function()
+		t.expectEqual(Format.percent(20), "20%")
+		t.expectEqual(Format.percent(0), "0%")
+	end)
+
+	t.it("소수는 자릿수를 맞춘다", function()
+		t.expectEqual(Format.percent(12.34), "12.3%")
+		t.expectEqual(Format.percent(12.34, 2), "12.34%")
+	end)
+end)
+
+t.describe("Format.level", function()
+	t.it("강화 레벨을 +N 으로 쓴다", function()
+		t.expectEqual(Format.level(0), "+0")
+		t.expectEqual(Format.level(20), "+20")
+	end)
+end)
+
+t.describe("Format.duration", function()
+	t.it("분:초 형식", function()
+		t.expectEqual(Format.duration(65), "1:05")
+		t.expectEqual(Format.duration(9), "0:09")
+	end)
+
+	t.it("한 시간이 넘으면 시:분:초", function()
+		t.expectEqual(Format.duration(3725), "1:02:05")
+	end)
+
+	t.it("음수는 0 으로 처리한다", function()
+		t.expectEqual(Format.duration(-10), "0:00")
+	end)
+end)
