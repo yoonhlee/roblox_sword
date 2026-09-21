@@ -16,6 +16,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TextService = game:GetService("TextService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Types = require(Shared:WaitForChild("Types"))
@@ -43,6 +44,11 @@ local rng = Random.new()
 
 -- 플레이어당 초당 3회, 동시 처리 1건
 local limiter = RateLimiter.new({ maxRequests = 3, windowSeconds = 1 })
+
+-- 이름 변경은 필터링 API 를 부르므로 훨씬 드물게만 허용한다.
+local renameLimiter = RateLimiter.new({ maxRequests = 2, windowSeconds = 30 })
+
+local MAX_NAME_LENGTH = 16
 
 local feedRemote: RemoteEvent? = nil
 
@@ -174,6 +180,11 @@ local function process(player: Player, wantsProtect: boolean): Types.EnhanceResp
 
 	AnalyticsService.logEnhance(player, level, result.outcome, odds.cost)
 
+	-- 첫 1분 튜토리얼 퍼널: 몇 명이 1/2/3회차까지 오는지 본다.
+	if data.stats.enhanceTries <= 3 then
+		AnalyticsService.logFunnel(player, `tutorial_enhance_{data.stats.enhanceTries}`)
+	end
+
 	if result.outcome == "success" then
 		broadcastIfNotable(player, data, result.newLevel)
 	end
@@ -283,6 +294,71 @@ local function handleSell(player: Player): Types.SellResponse
 	return response
 end
 
+--[[
+	무기 이름 짓기.
+
+	필터링(FilterStringAsync)은 yield 하는 웹 요청이라 다른 처리와 성격이 다르다.
+	그래서 순서를 이렇게 잡는다.
+	  1) 형식 검사 (길이, 빈 문자열, 올바른 UTF-8)
+	  2) 필터링 (여기서 yield)
+	  3) yield 가 끝난 뒤에 데이터를 "다시" 가져와서 저장
+	3번이 중요하다. 필터링을 기다리는 동안 플레이어가 나가거나 세션이 끝났을 수
+	있으므로, yield 이전에 잡아 둔 데이터 참조를 그대로 쓰면 안 된다.
+
+	저장하는 값도 표시하는 값도 전부 필터링을 통과한 문자열이다.
+]]
+local function handleRename(player: Player, rawName: any): Types.RenameResponse
+	if type(rawName) ~= "string" then
+		return fail("invalid_argument")
+	end
+
+	local trimmed = string.match(rawName, "^%s*(.-)%s*$") or ""
+	local length = utf8.len(trimmed)
+
+	if length == nil or length == 0 or length > MAX_NAME_LENGTH then
+		return fail("invalid_name")
+	end
+
+	if not renameLimiter:consume(player.UserId) then
+		return fail("too_fast")
+	end
+
+	-- 여기서부터 yield 한다.
+	local ok, filterResult = pcall(function()
+		return TextService:FilterStringAsync(
+			trimmed,
+			player.UserId,
+			Enum.TextFilterContext.PublicChat
+		)
+	end)
+
+	if not ok then
+		warn(`[EnhanceService] 이름 필터링 실패: {filterResult}`)
+		return fail("filter_failed")
+	end
+
+	-- 다른 사람에게도 보이는 이름이므로 broadcast 용 결과를 쓴다.
+	local okBroadcast, filtered = pcall(function()
+		return filterResult:GetNonChatStringForBroadcastAsync()
+	end)
+
+	if not okBroadcast or type(filtered) ~= "string" or filtered == "" then
+		warn(`[EnhanceService] 필터 결과를 얻지 못했습니다: {filtered}`)
+		return fail("filter_failed")
+	end
+
+	-- yield 가 끝났으니 데이터를 다시 가져온다.
+	local data = DataService.getActiveData(player)
+	if data == nil then
+		return fail("not_ready")
+	end
+
+	data.weapon.customName = filtered
+	DataService.replicate(player)
+
+	return { ok = true, name = filtered }
+end
+
 local function handleGetOdds(player: Player): Types.DisplayOdds | Types.Failure
 	local data = DataService.getData(player)
 	if data == nil then
@@ -320,6 +396,10 @@ function EnhanceService.Init()
 	local sellRemote = remotesFolder:WaitForChild(Remotes.Functions.SellWeapon) :: RemoteFunction
 	sellRemote.OnServerInvoke = handleSell
 
+	local renameRemote =
+		remotesFolder:WaitForChild(Remotes.Functions.RenameWeapon) :: RemoteFunction
+	renameRemote.OnServerInvoke = handleRename
+
 	local oddsRemote = remotesFolder:WaitForChild(Remotes.Functions.GetOdds) :: RemoteFunction
 	oddsRemote.OnServerInvoke = handleGetOdds
 
@@ -332,6 +412,7 @@ end
 function EnhanceService.Start()
 	Players.PlayerRemoving:Connect(function(player)
 		limiter:clear(player.UserId)
+		renameLimiter:clear(player.UserId)
 	end)
 end
 

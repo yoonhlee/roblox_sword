@@ -56,13 +56,19 @@ local goldLabel: TextLabel
 local shardLabel: TextLabel
 local ticketButton: TextButton
 local centerFrame: Frame
-local weaponLabel: TextLabel
+local weaponButton: TextButton
+local renamePanel: Frame
+local renameBox: TextBox
+local renameConfirm: TextButton
+local renameCancel: TextButton
 local levelLabel: TextLabel
 local eventLabel: TextLabel
 local bottomPanel: Frame
 local oddsLabel: TextLabel
 local costLabel: TextLabel
 local statusLabel: TextLabel
+local bannerLabel: TextLabel
+local hintLabel: TextLabel
 local protectButton: TextButton
 local oddsTableButton: TextButton
 local sellButton: TextButton
@@ -78,6 +84,7 @@ local confirmNo: TextButton
 local enhanceRemote: RemoteFunction
 local sellRemote: RemoteFunction
 local ticketRemote: RemoteFunction
+local renameRemote: RemoteFunction
 
 -- 확인 창은 하나를 돌려 쓴다. "예" 를 눌렀을 때 할 일을 여기에 담아 둔다.
 local confirmAction: (() -> ())? = nil
@@ -193,6 +200,19 @@ local function build()
 		LayoutOrder = 3,
 	})
 
+	-- 공지 / 점검 배너 (내용이 있을 때만 보인다)
+	bannerLabel = makeLabel(gui, {
+		BackgroundColor3 = Color3.fromRGB(64, 48, 24),
+		BackgroundTransparency = 0.15,
+		Size = UDim2.new(1, -24, 0, 30),
+		Position = UDim2.new(0.5, 0, 0, 56),
+		AnchorPoint = Vector2.new(0.5, 0),
+		TextSize = 14,
+		TextWrapped = true,
+		Visible = false,
+	})
+	corner(bannerLabel, 8)
+
 	-- 중앙: 무기와 강화 레벨
 	centerFrame = Instance.new("Frame")
 	centerFrame.Name = "Center"
@@ -210,8 +230,12 @@ local function build()
 	centerList.Padding = UDim.new(0, 4)
 	centerList.Parent = centerFrame
 
-	weaponLabel = makeLabel(centerFrame, {
-		Size = UDim2.new(1, 0, 0, 26),
+	-- 무기 이름은 눌러서 바꿀 수 있다.
+	weaponButton = makeButton(centerFrame, {
+		Size = UDim2.new(1, 0, 0, TOUCH_MIN),
+		BackgroundTransparency = 1,
+		AutoButtonColor = false,
+		Font = Enum.Font.GothamMedium,
 		TextSize = 22,
 		TextColor3 = COLOR_MUTED,
 		LayoutOrder = 1,
@@ -343,6 +367,15 @@ local function build()
 		LayoutOrder = 7,
 	})
 
+	-- 튜토리얼 안내. 첫 3회 강화까지만 보인다.
+	hintLabel = makeLabel(bottomPanel, {
+		Size = UDim2.new(1, 0, 0, 18),
+		TextSize = 14,
+		TextColor3 = COLOR_ACCENT,
+		LayoutOrder = 0,
+		Visible = false,
+	})
+
 	-- 판매 확인 창
 	confirmPanel = Instance.new("Frame")
 	confirmPanel.Name = "SellConfirm"
@@ -393,6 +426,73 @@ local function build()
 		LayoutOrder = 3,
 	})
 
+	-- 이름 짓기 창
+	renamePanel = Instance.new("Frame")
+	renamePanel.Name = "Rename"
+	renamePanel.BackgroundColor3 = COLOR_PANEL
+	renamePanel.BorderSizePixel = 0
+	renamePanel.AnchorPoint = Vector2.new(0.5, 0.5)
+	renamePanel.Position = UDim2.fromScale(0.5, 0.5)
+	renamePanel.Size = UDim2.new(0.86, 0, 0, 210)
+	renamePanel.Visible = false
+	renamePanel.ZIndex = 30
+	renamePanel.Parent = gui
+	corner(renamePanel, 14)
+
+	local renameSize = Instance.new("UISizeConstraint")
+	renameSize.MaxSize = Vector2.new(420, math.huge)
+	renameSize.Parent = renamePanel
+
+	local renamePadding = Instance.new("UIPadding")
+	renamePadding.PaddingTop = UDim.new(0, 16)
+	renamePadding.PaddingBottom = UDim.new(0, 16)
+	renamePadding.PaddingLeft = UDim.new(0, 16)
+	renamePadding.PaddingRight = UDim.new(0, 16)
+	renamePadding.Parent = renamePanel
+
+	local renameList = Instance.new("UIListLayout")
+	renameList.FillDirection = Enum.FillDirection.Vertical
+	renameList.SortOrder = Enum.SortOrder.LayoutOrder
+	renameList.Padding = UDim.new(0, 10)
+	renameList.Parent = renamePanel
+
+	local renamePromptLabel = makeLabel(renamePanel, {
+		Size = UDim2.new(1, 0, 0, 22),
+		TextSize = 15,
+		TextColor3 = COLOR_MUTED,
+		ZIndex = 31,
+		LayoutOrder = 1,
+	})
+	renamePromptLabel.Name = "Prompt"
+
+	renameBox = Instance.new("TextBox")
+	renameBox.BackgroundColor3 = COLOR_SUB
+	renameBox.BorderSizePixel = 0
+	renameBox.Font = Enum.Font.GothamMedium
+	renameBox.TextSize = 18
+	renameBox.TextColor3 = COLOR_TEXT
+	renameBox.PlaceholderColor3 = COLOR_DISABLED
+	renameBox.ClearTextOnFocus = false
+	renameBox.Text = ""
+	renameBox.Size = UDim2.new(1, 0, 0, TOUCH_MIN)
+	renameBox.ZIndex = 31
+	renameBox.LayoutOrder = 2
+	renameBox.Parent = renamePanel
+	corner(renameBox, 10)
+
+	renameConfirm = makeButton(renamePanel, {
+		Size = UDim2.new(1, 0, 0, TOUCH_MIN),
+		BackgroundColor3 = COLOR_ACCENT,
+		TextColor3 = Color3.fromRGB(24, 18, 10),
+		ZIndex = 31,
+		LayoutOrder = 3,
+	})
+	renameCancel = makeButton(renamePanel, {
+		Size = UDim2.new(1, 0, 0, TOUCH_MIN),
+		ZIndex = 31,
+		LayoutOrder = 4,
+	})
+
 	EffectsController.bind(gui, centerFrame, levelLabel)
 
 	applyLayout()
@@ -422,6 +522,13 @@ local function render()
 	sellButton.Text = Locale.get(language, "ui.sell")
 	confirmYes.Text = Locale.get(language, "ui.confirm")
 	confirmNo.Text = Locale.get(language, "ui.cancel")
+	renameConfirm.Text = Locale.get(language, "ui.rename")
+	renameCancel.Text = Locale.get(language, "ui.cancel")
+
+	local prompt = renamePanel:FindFirstChild("Prompt")
+	if prompt and prompt:IsA("TextLabel") then
+		prompt.Text = Locale.get(language, "ui.renamePrompt")
+	end
 
 	if data == nil then
 		enhanceButton.Text = Locale.get(language, "ui.loading")
@@ -429,6 +536,30 @@ local function render()
 		enhanceButton.Active = false
 		sellButton.Active = false
 		return
+	end
+
+	-- 공지/점검 배너
+	local liveOps = ClientState.getLiveOps()
+	if liveOps.maintenance then
+		bannerLabel.Visible = true
+		bannerLabel.Text = Locale.get(language, "ui.maintenance")
+	elseif liveOps.notice ~= "" then
+		bannerLabel.Visible = true
+		bannerLabel.Text = liveOps.notice
+	else
+		bannerLabel.Visible = false
+	end
+
+	-- 첫 1분 안에 강화를 세 번 경험하게 하는 안내
+	local tries = data.stats.enhanceTries
+	if tries < 3 then
+		hintLabel.Visible = true
+		hintLabel.Text = Locale.get(language, `tutorial.step{tries + 1}`)
+	elseif tries == 3 then
+		hintLabel.Visible = true
+		hintLabel.Text = Locale.get(language, "tutorial.done")
+	else
+		hintLabel.Visible = false
 	end
 
 	goldLabel.Text = Locale.get(language, "ui.gold", Format.comma(data.gold))
@@ -439,7 +570,7 @@ local function render()
 		else Locale.get(language, "ui.tickets", data.protectTickets)
 	ticketButton.TextColor3 = if exchangeable > 0 then COLOR_ACCENT else COLOR_MUTED
 
-	weaponLabel.Text = weaponDisplayName(language, data)
+	weaponButton.Text = weaponDisplayName(language, data)
 	levelLabel.Text = Locale.get(language, "ui.level", data.weapon.level)
 
 	protectButton.Text = `{if useProtect then "[v]" else "[ ]"} {Locale.get(language, "ui.useProtect")} ({data.protectTickets})`
@@ -646,6 +777,36 @@ local function openExchangeConfirm()
 	)
 end
 
+local function requestRename()
+	local text = renameBox.Text
+	renamePanel.Visible = false
+
+	if text == "" then
+		return
+	end
+
+	local ok, response = pcall(function()
+		return renameRemote:InvokeServer(text)
+	end)
+
+	if not ok or type(response) ~= "table" then
+		showError("unknown")
+		return
+	end
+
+	if response.ok ~= true then
+		showError(tostring(response.reason))
+		return
+	end
+
+	-- 서버가 돌려준 "필터링을 통과한" 이름만 화면에 쓴다.
+	FeedController.pushRaw(
+		Locale.get(ClientState.getLanguage(), "ui.renamed", response.name),
+		COLOR_ACCENT
+	)
+	render()
+end
+
 local function openSellConfirm()
 	local data = ClientState.getData()
 	if data == nil then
@@ -674,11 +835,20 @@ function UIController.Init()
 	sellRemote = remotesFolder:WaitForChild(Remotes.Functions.SellWeapon) :: RemoteFunction
 	ticketRemote =
 		remotesFolder:WaitForChild(Remotes.Functions.BuyProtectTicket) :: RemoteFunction
+	renameRemote = remotesFolder:WaitForChild(Remotes.Functions.RenameWeapon) :: RemoteFunction
 
 	local dataChanged = remotesFolder:WaitForChild(Remotes.Events.DataChanged) :: RemoteEvent
 	dataChanged.OnClientEvent:Connect(function(data: any)
 		if type(data) == "table" then
 			ClientState.setData(data)
+		end
+	end)
+
+	local liveOpsRemote =
+		remotesFolder:WaitForChild(Remotes.Events.LiveOpsChanged) :: RemoteEvent
+	liveOpsRemote.OnClientEvent:Connect(function(config: any)
+		if type(config) == "table" then
+			ClientState.setLiveOps(config)
 		end
 	end)
 
@@ -727,6 +897,20 @@ function UIController.Init()
 	end)
 
 	ticketButton.Activated:Connect(openExchangeConfirm)
+
+	weaponButton.Activated:Connect(function()
+		local data = ClientState.getData()
+		renameBox.Text = if data and data.weapon.customName then data.weapon.customName else ""
+		renamePanel.Visible = true
+	end)
+
+	renameConfirm.Activated:Connect(function()
+		task.spawn(requestRename)
+	end)
+
+	renameCancel.Activated:Connect(function()
+		renamePanel.Visible = false
+	end)
 
 	render()
 end

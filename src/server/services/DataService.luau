@@ -319,6 +319,33 @@ function DataService.Init()
 	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
 	dataChangedRemote = remotesFolder:WaitForChild(Remotes.Events.DataChanged) :: RemoteEvent
 
+	-- 설정 변경 (사운드 on/off, 언어)
+	local settingRemote =
+		remotesFolder:WaitForChild(Remotes.Functions.SetSetting) :: RemoteFunction
+	settingRemote.OnServerInvoke = function(player: Player, key: any, value: any)
+		local data = DataService.getActiveData(player)
+		if data == nil then
+			return { ok = false, reason = "not_ready" }
+		end
+
+		if key == "sfx" then
+			if type(value) ~= "boolean" then
+				return { ok = false, reason = "invalid_argument" }
+			end
+			data.settings.sfx = value
+		elseif key == "language" then
+			if not table.find(GameConfig.SUPPORTED_LANGUAGES, value) then
+				return { ok = false, reason = "invalid_argument" }
+			end
+			data.settings.language = value
+		else
+			return { ok = false, reason = "invalid_argument" }
+		end
+
+		DataService.replicate(player)
+		return { ok = true }
+	end
+
 	print(`[DataService] 스토어 "{storeName}" 사용`)
 end
 

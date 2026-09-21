@@ -130,6 +130,13 @@ export type BattleResultPayload = {
 
 export type Success = { ok: true }
 
+export type RenameSuccess = {
+	ok: true,
+	name: string, -- 필터링을 통과한 이름 (표시할 때도 이 값을 쓴다)
+}
+
+export type RenameResponse = RenameSuccess | Failure
+
 export type TicketPurchaseSuccess = {
 	ok: true,
 	tickets: number,

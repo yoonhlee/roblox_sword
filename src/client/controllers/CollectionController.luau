@@ -28,7 +28,7 @@ local COLOR_ACCENT = Color3.fromRGB(226, 142, 58)
 
 local TOUCH_MIN = 44
 
-type Tab = "codex" | "achv" | "rank"
+type Tab = "codex" | "achv" | "rank" | "settings"
 
 local gui: ScreenGui
 local panel: Frame
@@ -39,6 +39,10 @@ local closeButton: TextButton
 
 local codexRemote: RemoteFunction
 local boardRemote: RemoteFunction
+local settingRemote: RemoteFunction
+local settingsRow: Frame
+local sfxButton: TextButton
+local languageButton: TextButton
 
 local activeTab: Tab = "codex"
 local rankKind = "level"
@@ -155,6 +159,30 @@ local function renderRanking()
 	end
 end
 
+local function applySetting(key: string, value: any)
+	task.spawn(function()
+		pcall(function()
+			settingRemote:InvokeServer(key, value)
+		end)
+	end)
+end
+
+local function renderSettings()
+	local language = ClientState.getLanguage()
+	local data = ClientState.getData()
+
+	clearRows()
+
+	if data == nil then
+		makeRow(Locale.get(language, "error.not_ready"), COLOR_MUTED, 1)
+		return
+	end
+
+	sfxButton.Text = Locale.get(language, if data.settings.sfx then "ui.sfxOn" else "ui.sfxOff")
+	sfxButton.TextColor3 = if data.settings.sfx then COLOR_ACCENT else COLOR_MUTED
+	languageButton.Text = Locale.get(language, "ui.language")
+end
+
 local function refresh()
 	local language = ClientState.getLanguage()
 
@@ -165,6 +193,12 @@ local function refresh()
 
 	closeButton.Text = Locale.get(language, "ui.close")
 	rankToggle.Visible = activeTab == "rank"
+	settingsRow.Visible = activeTab == "settings"
+
+	if activeTab == "settings" then
+		renderSettings()
+		return
+	end
 
 	clearRows()
 	makeRow("...", COLOR_MUTED, 0)
@@ -264,10 +298,11 @@ local function build()
 	tabList.Parent = tabRow
 
 	local order = 0
-	for _, key in { "codex", "achv", "rank" } do
+	for _, key in { "codex", "achv", "rank", "settings" } do
 		order += 1
 		local button = makeButton(tabRow, {
-			Size = UDim2.new(1 / 3, -4, 1, 0),
+			Size = UDim2.new(0.25, -5, 1, 0),
+			TextSize = 13,
 			LayoutOrder = order,
 		})
 		button.Activated:Connect(function()
@@ -287,6 +322,45 @@ local function build()
 	rankToggle.Activated:Connect(function()
 		rankKind = if rankKind == "level" then "rating" else "level"
 		refresh()
+	end)
+
+	-- 설정 탭에서만 보이는 줄
+	settingsRow = Instance.new("Frame")
+	settingsRow.BackgroundTransparency = 1
+	settingsRow.Size = UDim2.new(1, 0, 0, TOUCH_MIN)
+	settingsRow.Visible = false
+	settingsRow.LayoutOrder = 2
+	settingsRow.Parent = panel
+
+	local settingsList = Instance.new("UIListLayout")
+	settingsList.FillDirection = Enum.FillDirection.Horizontal
+	settingsList.SortOrder = Enum.SortOrder.LayoutOrder
+	settingsList.Padding = UDim.new(0, 8)
+	settingsList.Parent = settingsRow
+
+	sfxButton = makeButton(settingsRow, {
+		Size = UDim2.new(0.5, -4, 1, 0),
+		TextSize = 14,
+		Font = Enum.Font.GothamMedium,
+		LayoutOrder = 1,
+	})
+	languageButton = makeButton(settingsRow, {
+		Size = UDim2.new(0.5, -4, 1, 0),
+		TextSize = 14,
+		Font = Enum.Font.GothamMedium,
+		LayoutOrder = 2,
+	})
+
+	sfxButton.Activated:Connect(function()
+		local data = ClientState.getData()
+		if data then
+			applySetting("sfx", not data.settings.sfx)
+		end
+	end)
+
+	languageButton.Activated:Connect(function()
+		local next_ = if ClientState.getLanguage() == "ko" then "en" else "ko"
+		applySetting("language", next_)
 	end)
 
 	scroller = Instance.new("ScrollingFrame")
@@ -330,8 +404,16 @@ function CollectionController.Init()
 	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
 	codexRemote = remotesFolder:WaitForChild(Remotes.Functions.GetCodex) :: RemoteFunction
 	boardRemote = remotesFolder:WaitForChild(Remotes.Functions.GetLeaderboard) :: RemoteFunction
+	settingRemote = remotesFolder:WaitForChild(Remotes.Functions.SetSetting) :: RemoteFunction
 end
 
-function CollectionController.Start() end
+function CollectionController.Start()
+	-- 설정을 바꾸면 서버가 데이터를 다시 내려 주므로, 그때 화면을 갱신한다.
+	ClientState.onChanged(function()
+		if gui.Enabled and activeTab == "settings" then
+			renderSettings()
+		end
+	end)
+end
 
 return CollectionController

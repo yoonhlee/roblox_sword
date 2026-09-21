@@ -16,6 +16,11 @@ local ClientState = {}
 
 local data: Types.PlayerData? = nil
 local odds: Types.DisplayOdds? = nil
+local liveOps: { maintenance: boolean, notice: string, event: any } = {
+	maintenance = false,
+	notice = "",
+	event = nil,
+}
 local listeners: { () -> () } = {}
 
 local function notify()
@@ -50,6 +55,19 @@ function ClientState.getLanguage(): string
 		return data.settings.language
 	end
 	return Locale.DEFAULT_LANGUAGE
+end
+
+function ClientState.setLiveOps(config: any)
+	liveOps = {
+		maintenance = config.maintenance == true,
+		notice = if type(config.notice) == "string" then config.notice else "",
+		event = config.event,
+	}
+	notify()
+end
+
+function ClientState.getLiveOps()
+	return liveOps
 end
 
 function ClientState.onChanged(listener: () -> ())
