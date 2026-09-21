@@ -91,7 +91,8 @@ rojo serve                  # Studio 동기화 서버
 rojo build -o build.rbxlx   # 플레이스 파일 빌드
 wally install               # 패키지 설치
 
-lune run tests/run          # 순수 로직 테스트 전체 실행
+lune run tests/run          # 순수 로직 테스트 전체 실행 (73개)
+lune run tools/simulate_economy   # 경제 시뮬레이션
 stylua src tests tools      # 포맷
 selene src tests tools      # 린트
 ```

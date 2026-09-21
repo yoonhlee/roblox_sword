@@ -262,6 +262,10 @@ local function processSell(player: Player): Types.SellResponse
 	local granted = EconomyService.addGold(player, data, value, "weapon_sell", true)
 	data.weapon.level = 0
 
+	-- 지어 준 이름은 남겨 둔다.
+	-- 무기는 바뀌어도 "그 사람이 부르는 이름"은 이어지는 편이 쓰기 편하다.
+	-- (파괴됐을 때도 같은 이유로 지우지 않는다)
+
 	return {
 		ok = true,
 		goldGained = granted,

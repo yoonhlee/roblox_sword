@@ -13,5 +13,6 @@ require("./EnhanceTable.spec")
 require("./EnhanceLogic.spec")
 require("./RateLimiter.spec")
 require("./BattleLogic.spec")
+require("./Locale.spec")
 
 t.finish()
