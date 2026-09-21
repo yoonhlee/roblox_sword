@@ -59,6 +59,16 @@ export type Failure = {
 	reason: string,
 }
 
+-- 강화 화면에 노출하는 확률(버프 반영 후 최종값, 퍼센트 단위)
+export type DisplayOdds = {
+	level: number,
+	success: number,
+	keep: number,
+	destroy: number,
+	cost: number,
+	eventName: string?, -- 적용 중인 확률 버프 이벤트 이름(로컬라이즈 키)
+}
+
 export type EnhanceOutcome = "success" | "keep" | "destroy" | "protected"
 
 export type EnhanceSuccess = {
@@ -67,6 +77,7 @@ export type EnhanceSuccess = {
 	newLevel: number,
 	gold: number,
 	shardsGained: number,
+	odds: DisplayOdds, -- 새 레벨 기준 확률. 클라이언트가 다시 물어보지 않아도 되도록 같이 보낸다.
 }
 
 export type EnhanceResponse = EnhanceSuccess | Failure
@@ -83,15 +94,5 @@ export type BattleResult = {
 }
 
 export type BattleResponse = BattleResult | Failure
-
--- 강화 화면에 노출하는 확률(버프 반영 후 최종값, 퍼센트 단위)
-export type DisplayOdds = {
-	level: number,
-	success: number,
-	keep: number,
-	destroy: number,
-	cost: number,
-	eventName: string?, -- 적용 중인 확률 버프 이벤트 이름(로컬라이즈 키)
-}
 
 return Types

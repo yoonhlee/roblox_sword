@@ -10,5 +10,7 @@ local t = require("./harness")
 
 require("./Format.spec")
 require("./EnhanceTable.spec")
+require("./EnhanceLogic.spec")
+require("./RateLimiter.spec")
 
 t.finish()

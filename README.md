@@ -29,8 +29,9 @@ rokit install       # rokit.toml 의 rojo / wally / selene / stylua / lune 설�
 wally install       # Packages/ 와 ServerPackages/ 생성 (git 에는 올리지 않음)
 ```
 
-> 현재 `wally.toml` 에는 의존성이 비어 있다. **ProfileStore 설치 방법이 확정되면**
-> 그때 추가한다(아래 "확인이 필요한 것" 참고).
+> 이 단계에서 ProfileStore(세션 락이 걸린 데이터 저장 라이브러리)가 설치된다.
+> 설치가 안 된 상태로 서버를 켜면 DataService 가 "`wally install` 을 실행하라"는
+> 메시지를 남기고 멈추므로, 원인을 못 찾고 헤맬 일은 없다.
 
 ### 1-3. Selene 표준 라이브러리 생성
 
@@ -108,9 +109,14 @@ selene src tests tools      # 린트
 4. 확인할 것
    - 각 클라이언트가 서로 다른 프로필을 로드하는지 (골드/레벨이 독립적인지)
    - 한쪽에서 강화해도 다른 쪽 화면이 바뀌지 않는지
+   - 강화 버튼을 연타해도 요청이 한 번에 하나만 처리되는지 (버튼이 잠김)
    - 배틀 도전 → 수락/거절/15초 무응답이 의도대로 동작하는지 (Phase 3 이후)
    - **Shutdown** 으로 서버를 강제 종료한 뒤 다시 들어갔을 때 데이터가 남아 있는지
-5. 서버 창의 Output 에 `[Bootstrap] 서비스 N개 시작 완료` 가 찍히는지 본다.
+5. 서버 창의 Output 에 아래 로그가 찍히는지 본다.
+   - `[DataService] 스토어 "ForgeFever_DEV" 사용`
+   - `[Bootstrap] 서비스 10개 시작 완료`
+   - 강화할 때마다 `[Economy] ... gold sink -10 (enhance_cost) → ...`
+     와 `[Enhance] ... +0 → success (비용 10)` 형태의 기록
 
 ---
 
@@ -140,6 +146,15 @@ tests/                   Lune 테스트
 tools/                   경제 시뮬레이션 등 개발 도구
 ```
 
+### 이번 단계에서 동작하는 것
+
+- 접속하면 ProfileStore 로 내 데이터가 열리고, 없으면 기본값(골드 100)으로 시작한다.
+- 화면 중앙의 강화 레벨, 하단의 강화 버튼, 성공/유지/파괴 확률과 비용이 보인다.
+- 강화 버튼을 누르면 서버가 골드를 깎고 결과를 정해 돌려준다.
+  파괴되면 파편을 받고, 방지권을 켜 두었으면 파괴가 막히며 방지권 1개가 소모된다.
+- 우측(모바일은 상단) 피드에 모루 영감의 대사가 한 줄씩 쌓인다.
+- 15강 이상을 성공하면 서버의 모든 사람에게 알림이 간다.
+
 ### 코드 규칙
 
 - 모든 Luau 파일 상단에 `--!strict`
@@ -156,7 +171,7 @@ tools/                   경제 시뮬레이션 등 개발 도구
 | Phase | 내용 | 상태 |
 | --- | --- | --- |
 | 0 | 환경 세팅, 폴더 구조, 빈 서비스 부트스트랩 | 완료 |
-| 1 | DataService(ProfileStore), EnhanceLogic + 테스트, EnhanceService, 최소 UI | 예정 |
+| 1 | DataService(ProfileStore), EnhanceLogic + 테스트, EnhanceService, 최소 UI | 완료 |
 | 2 | 결과 피드, 연출, 확률표 화면, 텍스트 명령어, 모바일 대응 | 예정 |
 | 3 | 배틀 (도전/수락, BattleLogic, 보상·레이팅, 어뷰징 방지) | 예정 |
 | 4 | 경제 + 시뮬레이션 (`tools/simulate_economy.luau`) | 예정 |
@@ -168,9 +183,6 @@ tools/                   경제 시뮬레이션 등 개발 도구
 
 ## 7. 확인이 필요한 것 (개발자 작업)
 
-- [ ] **ProfileStore 설치 방법** — Wally 레지스트리 패키지를 쓸지, 공식 배포본
-      단일 ModuleScript 를 `src/server/vendor/` 에 넣을지 결정. 확정 전까지
-      DataService 는 ProfileStore 를 참조하지 않는다.
 - [ ] `rokit.toml` 의 툴 버전 검증 (위 1-1 참고)
 - [ ] `src/shared/Config/Game.luau` 의 `ADMIN_USER_IDS` 에 본인 UserId 입력
 - [ ] `src/shared/Config/Products.luau` 의 게임패스 / 개발자 상품 ID 입력

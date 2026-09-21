@@ -17,6 +17,7 @@ Remotes.Functions = {
 	SellWeapon = "SellWeapon", -- 무기 판매 → 골드 지급
 	BuyProtectTicket = "BuyProtectTicket", -- 파편 → 방지권 교환
 	RenameWeapon = "RenameWeapon", -- 무기 이름 변경(필터링 후 저장)
+	GetState = "GetState", -- 접속 직후 현재 데이터 + 확률 조회 (복제 이벤트를 놓쳤을 때의 보정)
 	GetOdds = "GetOdds", -- 현재 레벨 기준 최종 확률표 조회
 	ChallengeBattle = "ChallengeBattle", -- 배틀 도전 신청
 	RespondBattle = "RespondBattle", -- 도전 수락/거절

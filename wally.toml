@@ -10,12 +10,9 @@ realm = "shared"
 [server-dependencies]
 # 서버 전용 의존성은 ServerStorage/ServerPackages 로 들어간다.
 #
-# [확인 필요] ProfileStore(MadStudioRoblox) 설치 방법을 개발자가 결정해 줘.
-#  1) Wally 레지스트리에 등록된 패키지를 쓰는 경우 → 아래 줄의 주석을 풀고
-#     https://wally.run 에서 정확한 스코프/이름/버전을 확인해 채워 넣기
-#     ProfileStore = "<scope>/<name>@<version>"
-#  2) 공식 배포본(단일 ModuleScript)을 쓰는 경우 → 소스를
-#     src/server/vendor/ProfileStore.luau 로 복사하고 이 항목은 비워 두기
-#  어느 쪽인지 확정되기 전까지 DataService 는 ProfileStore 를 참조하지 않는다.
+# ProfileStore: 세션 락이 걸린 주기적 DataStore 저장 라이브러리 (MadStudioRoblox).
+# 패키지명/버전은 공식 저장소의 wally.toml 에서 확인했다
+# (https://github.com/MadStudioRoblox/ProfileStore, realm = server).
+ProfileStore = "lm-loleris/profilestore@1.0.3"
 
 [dev-dependencies]
