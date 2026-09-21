@@ -123,6 +123,13 @@ export type BattleResultPayload = {
 
 export type Success = { ok: true }
 
+export type TicketPurchaseSuccess = {
+	ok: true,
+	tickets: number,
+}
+
+export type TicketPurchaseResponse = TicketPurchaseSuccess | Failure
+
 export type BattleResponse = Success | Failure
 
 return Types

@@ -10,12 +10,21 @@
 	DataService.replicate(player) 를 한 번만 호출한다.
 ]]
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Types = require(Shared:WaitForChild("Types"))
+local Remotes = require(Shared:WaitForChild("Remotes"))
+
+local ConfigFolder = Shared:WaitForChild("Config")
+local EconomyConfig = require(ConfigFolder:WaitForChild("EconomyConfig"))
+local EnhanceTable = require(ConfigFolder:WaitForChild("EnhanceTable"))
+
+local EnhanceLogic = require(Shared:WaitForChild("Pure"):WaitForChild("EnhanceLogic"))
 
 local AnalyticsService = require(script.Parent:WaitForChild("AnalyticsService"))
+local DataService = require(script.Parent:WaitForChild("DataService"))
 
 local EconomyService = {}
 EconomyService.Name = "EconomyService"
@@ -187,8 +196,99 @@ function EconomyService.rolloverDaily(data: Types.PlayerData, nowSeconds: number
 	return true
 end
 
-function EconomyService.Init() end
+--[[
+	출석 보상. 연속 일수에 따라 금액이 커지고, 표 끝을 넘으면 마지막 값을 계속 준다.
+	rolloverDaily 가 true 를 돌려준 직후에만 호출한다.
+]]
+function EconomyService.grantDailyLogin(player: Player, data: Types.PlayerData): number
+	local rewards = EconomyConfig.DAILY_LOGIN_GOLD
+	local index = math.clamp(data.daily.streak, 1, #rewards)
+	local amount = rewards[index]
 
-function EconomyService.Start() end
+	return EconomyService.addGold(player, data, amount, "daily_login", true)
+end
+
+--[[
+	파편 또는 골드로 파괴 방지권을 산다.
+	method: "shards" | "gold"
+]]
+function EconomyService.buyProtectTickets(
+	player: Player,
+	method: string,
+	count: number
+): Types.TicketPurchaseResponse
+	if method ~= "shards" and method ~= "gold" then
+		return { ok = false, reason = "invalid_argument" }
+	end
+	if type(count) ~= "number" or count ~= math.floor(count) or count < 1 or count > 100 then
+		return { ok = false, reason = "invalid_argument" }
+	end
+
+	local data = DataService.getActiveData(player)
+	if data == nil then
+		return { ok = false, reason = "not_ready" }
+	end
+
+	if method == "shards" then
+		local price = EnhanceTable.SHARDS_PER_TICKET * count
+		if not EconomyService.spendShards(player, data, price, "ticket_exchange") then
+			return { ok = false, reason = "not_enough_shards" }
+		end
+	else
+		local price = EconomyConfig.PROTECT_TICKET_GOLD_PRICE * count
+		if not EconomyService.spendGold(player, data, price, "ticket_purchase") then
+			return { ok = false, reason = "not_enough_gold" }
+		end
+	end
+
+	EconomyService.addTickets(player, data, count, `ticket_{method}`)
+	DataService.replicate(player)
+
+	return { ok = true, tickets = data.protectTickets }
+end
+
+-- 파편으로 지금 살 수 있는 방지권 수 (UI 표시용)
+function EconomyService.affordableTickets(data: Types.PlayerData): number
+	return EnhanceLogic.ticketsAffordable(data.shards, EnhanceTable.SHARDS_PER_TICKET)
+end
+
+function EconomyService.Init()
+	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
+
+	local ticketRemote =
+		remotesFolder:WaitForChild(Remotes.Functions.BuyProtectTicket) :: RemoteFunction
+	ticketRemote.OnServerInvoke = function(player: Player, method: any, count: any)
+		return EconomyService.buyProtectTickets(player, tostring(method), tonumber(count) or 0)
+	end
+end
+
+function EconomyService.Start()
+	-- 접속 시 출석 확인
+	DataService.onLoaded(function(player, data)
+		if EconomyService.rolloverDaily(data) then
+			EconomyService.grantDailyLogin(player, data)
+			DataService.replicate(player)
+			AnalyticsService.logFunnel(player, "daily_login", { streak = data.daily.streak })
+		end
+	end)
+
+	-- 플레이 시간 보상
+	task.spawn(function()
+		while true do
+			task.wait(EconomyConfig.PLAYTIME_REWARD_INTERVAL_SECONDS)
+
+			for player, data in DataService.getAllActive() do
+				EconomyService.addGold(
+					player,
+					data,
+					EconomyConfig.PLAYTIME_REWARD_GOLD,
+					"playtime",
+					true
+				)
+				DataService.replicate(player)
+			end
+		end
+	end)
+end
 
 return EconomyService

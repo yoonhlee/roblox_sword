@@ -52,7 +52,7 @@ local gui: ScreenGui
 local uiScale: UIScale
 local goldLabel: TextLabel
 local shardLabel: TextLabel
-local ticketLabel: TextLabel
+local ticketButton: TextButton
 local centerFrame: Frame
 local weaponLabel: TextLabel
 local levelLabel: TextLabel
@@ -73,6 +73,10 @@ local confirmNo: TextButton
 
 local enhanceRemote: RemoteFunction
 local sellRemote: RemoteFunction
+local ticketRemote: RemoteFunction
+
+-- 확인 창은 하나를 돌려 쓴다. "예" 를 눌렀을 때 할 일을 여기에 담아 둔다.
+local confirmAction: (() -> ())? = nil
 
 local function corner(parent: Instance, radius: number)
 	local instance = Instance.new("UICorner")
@@ -173,8 +177,13 @@ local function build()
 		TextColor3 = COLOR_MUTED,
 		LayoutOrder = 2,
 	})
-	ticketLabel = makeLabel(topBar, {
-		Size = UDim2.new(0, 110, 1, 0),
+	-- 방지권 표시는 눌러서 파편 교환까지 할 수 있게 버튼으로 둔다.
+	ticketButton = makeButton(topBar, {
+		Size = UDim2.new(0, 150, 0, TOUCH_MIN),
+		BackgroundTransparency = 1,
+		AutoButtonColor = false,
+		Font = Enum.Font.GothamMedium,
+		TextSize = 16,
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = COLOR_MUTED,
 		LayoutOrder = 3,
@@ -398,7 +407,11 @@ local function render()
 
 	goldLabel.Text = Locale.get(language, "ui.gold", Format.comma(data.gold))
 	shardLabel.Text = Locale.get(language, "ui.shards", Format.comma(data.shards))
-	ticketLabel.Text = Locale.get(language, "ui.tickets", data.protectTickets)
+	local exchangeable = math.floor(data.shards / EnhanceTable.SHARDS_PER_TICKET)
+	ticketButton.Text = if exchangeable > 0
+		then `{Locale.get(language, "ui.tickets", data.protectTickets)}  +`
+		else Locale.get(language, "ui.tickets", data.protectTickets)
+	ticketButton.TextColor3 = if exchangeable > 0 then COLOR_ACCENT else COLOR_MUTED
 
 	weaponLabel.Text = weaponDisplayName(language, data)
 	levelLabel.Text = Locale.get(language, "ui.level", data.weapon.level)
@@ -543,6 +556,70 @@ local function requestSell()
 	render()
 end
 
+-- 확인 창을 띄운다. 예를 누르면 action 이 실행된다.
+local function showConfirm(text: string, action: () -> ())
+	confirmLabel.Text = text
+	confirmAction = action
+	confirmPanel.Visible = true
+end
+
+local function requestTicketExchange()
+	if busy then
+		return
+	end
+	busy = true
+	render()
+
+	local ok, response = pcall(function()
+		return ticketRemote:InvokeServer("shards", 1)
+	end)
+
+	busy = false
+
+	if not ok or type(response) ~= "table" then
+		showError("unknown")
+		render()
+		return
+	end
+
+	if response.ok ~= true then
+		showError(tostring(response.reason))
+		render()
+		return
+	end
+
+	FeedController.pushRaw(
+		Locale.get(ClientState.getLanguage(), "ui.exchanged", response.tickets),
+		COLOR_ACCENT
+	)
+	SoundController.play("click")
+	render()
+end
+
+local function openExchangeConfirm()
+	local data = ClientState.getData()
+	if data == nil then
+		return
+	end
+
+	if data.shards < EnhanceTable.SHARDS_PER_TICKET then
+		showError("not_enough_shards")
+		return
+	end
+
+	showConfirm(
+		Locale.get(
+			ClientState.getLanguage(),
+			"ui.exchangeConfirm",
+			EnhanceTable.SHARDS_PER_TICKET,
+			Format.comma(data.shards)
+		),
+		function()
+			task.spawn(requestTicketExchange)
+		end
+	)
+end
+
 local function openSellConfirm()
 	local data = ClientState.getData()
 	if data == nil then
@@ -555,9 +632,12 @@ local function openSellConfirm()
 		return
 	end
 
-	confirmLabel.Text =
-		Locale.get(ClientState.getLanguage(), "ui.sellConfirm", Format.comma(value))
-	confirmPanel.Visible = true
+	showConfirm(
+		Locale.get(ClientState.getLanguage(), "ui.sellConfirm", Format.comma(value)),
+		function()
+			task.spawn(requestSell)
+		end
+	)
 end
 
 function UIController.Init()
@@ -566,6 +646,8 @@ function UIController.Init()
 	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
 	enhanceRemote = remotesFolder:WaitForChild(Remotes.Functions.Enhance) :: RemoteFunction
 	sellRemote = remotesFolder:WaitForChild(Remotes.Functions.SellWeapon) :: RemoteFunction
+	ticketRemote =
+		remotesFolder:WaitForChild(Remotes.Functions.BuyProtectTicket) :: RemoteFunction
 
 	local dataChanged = remotesFolder:WaitForChild(Remotes.Events.DataChanged) :: RemoteEvent
 	dataChanged.OnClientEvent:Connect(function(data: any)
@@ -598,12 +680,19 @@ function UIController.Init()
 
 	confirmYes.Activated:Connect(function()
 		confirmPanel.Visible = false
-		task.spawn(requestSell)
+		local action = confirmAction
+		confirmAction = nil
+		if action then
+			action()
+		end
 	end)
 
 	confirmNo.Activated:Connect(function()
 		confirmPanel.Visible = false
+		confirmAction = nil
 	end)
+
+	ticketButton.Activated:Connect(openExchangeConfirm)
 
 	render()
 end
