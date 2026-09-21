@@ -8,7 +8,7 @@
 local Types = {}
 
 -- 현재 저장 스키마 버전. PlayerData.schemaVersion 의 기준값.
-Types.SCHEMA_VERSION = 2
+Types.SCHEMA_VERSION = 3
 
 export type WeaponState = {
 	id: string, -- Config/Weapons 의 키
@@ -24,6 +24,10 @@ export type PlayerStats = {
 	battleWins: number,
 	battleLosses: number,
 	rating: number, -- 배틀 레이팅, 시작 1000
+	-- v3 에서 추가된 업적용 통계
+	keepStreak: number, -- 현재 연속 "유지" 횟수
+	bestKeepStreak: number, -- 최고 연속 "유지" 횟수
+	ticketsUsed: number, -- 지금까지 사용한 파괴 방지권 수
 }
 
 export type DailyState = {
@@ -134,6 +138,26 @@ export type TicketPurchaseSuccess = {
 export type TicketPurchaseResponse = TicketPurchaseSuccess | Failure
 
 -- 상점에 보여 줄 항목 (클라이언트는 ID 를 알 필요가 없다)
+-- 도감/업적 화면에 보낼 정보
+export type CodexEntry = {
+	weaponId: string,
+	milestone: number,
+	unlocked: boolean,
+}
+
+export type AchievementEntry = {
+	id: string,
+	unlocked: boolean,
+	gold: number,
+}
+
+export type LeaderboardEntry = {
+	rank: number,
+	userId: number,
+	name: string,
+	value: number,
+}
+
 export type ShopItem = {
 	key: string,
 	kind: "gamepass" | "product",

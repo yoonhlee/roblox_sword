@@ -36,6 +36,7 @@ local EconomyService = require(services:WaitForChild("EconomyService"))
 local AnalyticsService = require(services:WaitForChild("AnalyticsService"))
 local LiveOpsService = require(services:WaitForChild("LiveOpsService"))
 local RateLimiter = require(services:WaitForChild("RateLimiter"))
+local CodexService = require(services:WaitForChild("CodexService"))
 
 local BattleService = {}
 BattleService.Name = "BattleService"
@@ -189,6 +190,9 @@ local function runMatch(challenger: Player, opponent: Player): Types.BattleRespo
 	if opponentAllowed then
 		markRewarded(opponentData, challenger.UserId)
 	end
+
+	CodexService.evaluate(challenger, challengerData)
+	CodexService.evaluate(opponent, opponentData)
 
 	local now = os.clock()
 	lastBattleAt[challenger.UserId] = now

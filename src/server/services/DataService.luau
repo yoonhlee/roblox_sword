@@ -84,6 +84,9 @@ local function buildTemplate(): Types.PlayerData
 			battleWins = 0,
 			battleLosses = 0,
 			rating = 1000,
+			keepStreak = 0,
+			bestKeepStreak = 0,
+			ticketsUsed = 0,
 		},
 		codex = {},
 		achievements = {},
@@ -136,6 +139,16 @@ local function migrate(data: Types.PlayerData): Types.PlayerData
 
 		data.purchaseHistory = migrated
 		data.schemaVersion = 2
+	end
+
+	-- v2 → v3: 업적 판정에 쓰는 통계를 추가한다.
+	-- Reconcile() 이 템플릿에서 채워 주지만, 순서에 기대지 않고 여기서도 보정한다.
+	if data.schemaVersion == 2 then
+		local stats = data.stats :: any
+		stats.keepStreak = stats.keepStreak or 0
+		stats.bestKeepStreak = stats.bestKeepStreak or 0
+		stats.ticketsUsed = stats.ticketsUsed or 0
+		data.schemaVersion = 3
 	end
 
 	if data.schemaVersion > Types.SCHEMA_VERSION then

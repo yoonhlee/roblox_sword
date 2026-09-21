@@ -31,6 +31,7 @@ local EffectsController = require(controllers:WaitForChild("EffectsController"))
 local OddsTableController = require(controllers:WaitForChild("OddsTableController"))
 local BattleController = require(controllers:WaitForChild("BattleController"))
 local ShopController = require(controllers:WaitForChild("ShopController"))
+local CollectionController = require(controllers:WaitForChild("CollectionController"))
 
 local UIController = {}
 UIController.Name = "UIController"
@@ -67,6 +68,7 @@ local oddsTableButton: TextButton
 local sellButton: TextButton
 local battleButton: TextButton
 local shopButton: TextButton
+local recordsButton: TextButton
 local enhanceButton: TextButton
 local confirmPanel: Frame
 local confirmLabel: TextLabel
@@ -237,7 +239,7 @@ local function build()
 	bottomPanel.BorderSizePixel = 0
 	bottomPanel.AnchorPoint = Vector2.new(0.5, 1)
 	bottomPanel.Position = UDim2.new(0.5, 0, 1, -12)
-	bottomPanel.Size = UDim2.new(1, -24, 0, 262)
+	bottomPanel.Size = UDim2.new(1, -24, 0, 312)
 	bottomPanel.Parent = gui
 	corner(bottomPanel, 14)
 
@@ -275,42 +277,56 @@ local function build()
 		LayoutOrder = 3,
 	})
 
-	-- 확률표 / 판매 (가로 2분할)
-	local actionRow = Instance.new("Frame")
-	actionRow.BackgroundTransparency = 1
-	actionRow.Size = UDim2.new(1, 0, 0, TOUCH_MIN)
-	actionRow.LayoutOrder = 4
-	actionRow.Parent = bottomPanel
+	-- 보조 버튼 두 줄. 한 줄에 다섯 개를 넣으면 모바일에서 누르기 어려워진다.
+	local function makeActionRow(order: number): Frame
+		local row = Instance.new("Frame")
+		row.BackgroundTransparency = 1
+		row.Size = UDim2.new(1, 0, 0, TOUCH_MIN)
+		row.LayoutOrder = order
+		row.Parent = bottomPanel
 
-	local actionList = Instance.new("UIListLayout")
-	actionList.FillDirection = Enum.FillDirection.Horizontal
-	actionList.SortOrder = Enum.SortOrder.LayoutOrder
-	actionList.Padding = UDim.new(0, 8)
-	actionList.Parent = actionRow
+		local rowList = Instance.new("UIListLayout")
+		rowList.FillDirection = Enum.FillDirection.Horizontal
+		rowList.SortOrder = Enum.SortOrder.LayoutOrder
+		rowList.Padding = UDim.new(0, 8)
+		rowList.Parent = row
 
-	oddsTableButton = makeButton(actionRow, {
-		Size = UDim2.new(0.25, -6, 1, 0),
+		return row
+	end
+
+	local actionRowTop = makeActionRow(4)
+	local actionRowBottom = makeActionRow(5)
+
+	oddsTableButton = makeButton(actionRowTop, {
+		Size = UDim2.new(1 / 3, -6, 1, 0),
 		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
 		LayoutOrder = 1,
 	})
-	battleButton = makeButton(actionRow, {
-		Size = UDim2.new(0.25, -6, 1, 0),
+	battleButton = makeButton(actionRowTop, {
+		Size = UDim2.new(1 / 3, -6, 1, 0),
 		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
 		LayoutOrder = 2,
 	})
-	sellButton = makeButton(actionRow, {
-		Size = UDim2.new(0.25, -6, 1, 0),
+	recordsButton = makeButton(actionRowTop, {
+		Size = UDim2.new(1 / 3, -6, 1, 0),
 		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
 		LayoutOrder = 3,
 	})
-	shopButton = makeButton(actionRow, {
-		Size = UDim2.new(0.25, -6, 1, 0),
+
+	sellButton = makeButton(actionRowBottom, {
+		Size = UDim2.new(0.5, -4, 1, 0),
 		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
-		LayoutOrder = 4,
+		LayoutOrder = 1,
+	})
+	shopButton = makeButton(actionRowBottom, {
+		Size = UDim2.new(0.5, -4, 1, 0),
+		TextSize = 15,
+		Font = Enum.Font.GothamMedium,
+		LayoutOrder = 2,
 	})
 
 	enhanceButton = makeButton(bottomPanel, {
@@ -318,13 +334,13 @@ local function build()
 		BackgroundColor3 = COLOR_ACCENT,
 		TextColor3 = Color3.fromRGB(24, 18, 10),
 		TextSize = 24,
-		LayoutOrder = 5,
+		LayoutOrder = 6,
 	})
 	statusLabel = makeLabel(bottomPanel, {
 		Size = UDim2.new(1, 0, 0, 18),
 		TextSize = 14,
 		TextColor3 = Color3.fromRGB(255, 140, 130),
-		LayoutOrder = 6,
+		LayoutOrder = 7,
 	})
 
 	-- 판매 확인 창
@@ -402,6 +418,7 @@ local function render()
 	oddsTableButton.Text = Locale.get(language, "ui.oddsTable")
 	battleButton.Text = Locale.get(language, "ui.battle")
 	shopButton.Text = Locale.get(language, "ui.shop")
+	recordsButton.Text = Locale.get(language, "ui.records")
 	sellButton.Text = Locale.get(language, "ui.sell")
 	confirmYes.Text = Locale.get(language, "ui.confirm")
 	confirmNo.Text = Locale.get(language, "ui.cancel")
@@ -687,6 +704,10 @@ function UIController.Init()
 
 	shopButton.Activated:Connect(function()
 		ShopController.toggle()
+	end)
+
+	recordsButton.Activated:Connect(function()
+		CollectionController.toggle()
 	end)
 
 	sellButton.Activated:Connect(openSellConfirm)

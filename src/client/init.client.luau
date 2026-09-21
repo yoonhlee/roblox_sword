@@ -21,6 +21,7 @@ local CONTROLLER_ORDER = {
 	"OddsTableController",
 	"BattleController",
 	"ShopController",
+	"CollectionController",
 	"UIController",
 }
 

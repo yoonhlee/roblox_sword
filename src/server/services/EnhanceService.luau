@@ -33,6 +33,7 @@ local EconomyService = require(services:WaitForChild("EconomyService"))
 local AnalyticsService = require(services:WaitForChild("AnalyticsService"))
 local LiveOpsService = require(services:WaitForChild("LiveOpsService"))
 local RateLimiter = require(services:WaitForChild("RateLimiter"))
+local CodexService = require(services:WaitForChild("CodexService"))
 
 local EnhanceService = {}
 EnhanceService.Name = "EnhanceService"
@@ -82,15 +83,6 @@ local function buildDisplayOdds(level: number): Types.DisplayOdds
 		cost = odds.cost,
 		eventName = if event then event.nameKey else nil,
 	}
-end
-
--- 도감 기록. 보상 지급은 CodexService(Phase 6)가 맡고, 여기서는 달성 사실만 남긴다.
-local function recordCodex(data: Types.PlayerData, level: number)
-	for _, milestone in Weapons.CODEX_MILESTONES do
-		if level >= milestone then
-			data.codex[`{data.weapon.id}:{milestone}`] = true
-		end
-	end
 end
 
 local function broadcastIfNotable(player: Player, data: Types.PlayerData, level: number)
@@ -152,12 +144,22 @@ local function process(player: Player, wantsProtect: boolean): Types.EnhanceResp
 	data.weapon.level = result.newLevel
 	data.stats.enhanceTries += 1
 
+	-- 연속 "유지" 기록 (업적용)
+	if result.outcome == "keep" then
+		data.stats.keepStreak += 1
+		if data.stats.keepStreak > data.stats.bestKeepStreak then
+			data.stats.bestKeepStreak = data.stats.keepStreak
+		end
+	else
+		data.stats.keepStreak = 0
+	end
+
 	if result.outcome == "success" then
 		data.stats.enhanceSuccess += 1
 		if result.newLevel > data.stats.highestLevel then
 			data.stats.highestLevel = result.newLevel
 		end
-		recordCodex(data, result.newLevel)
+		CodexService.recordWeaponLevel(player, data, result.newLevel)
 	elseif result.outcome == "destroy" then
 		data.stats.destroyed += 1
 		if result.shardsGained > 0 then
@@ -165,7 +167,10 @@ local function process(player: Player, wantsProtect: boolean): Types.EnhanceResp
 		end
 	elseif result.outcome == "protected" then
 		EconomyService.spendTickets(player, data, result.ticketsUsed, "enhance_protect")
+		data.stats.ticketsUsed += result.ticketsUsed
 	end
+
+	CodexService.evaluate(player, data)
 
 	AnalyticsService.logEnhance(player, level, result.outcome, odds.cost)
 
