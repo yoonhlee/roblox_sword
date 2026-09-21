@@ -19,6 +19,7 @@ local CONTROLLER_ORDER = {
 	"EffectsController",
 	"FeedController",
 	"OddsTableController",
+	"BattleController",
 	"UIController",
 }
 

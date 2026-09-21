@@ -29,6 +29,7 @@ local FeedController = require(controllers:WaitForChild("FeedController"))
 local SoundController = require(controllers:WaitForChild("SoundController"))
 local EffectsController = require(controllers:WaitForChild("EffectsController"))
 local OddsTableController = require(controllers:WaitForChild("OddsTableController"))
+local BattleController = require(controllers:WaitForChild("BattleController"))
 
 local UIController = {}
 UIController.Name = "UIController"
@@ -63,6 +64,7 @@ local statusLabel: TextLabel
 local protectButton: TextButton
 local oddsTableButton: TextButton
 local sellButton: TextButton
+local battleButton: TextButton
 local enhanceButton: TextButton
 local confirmPanel: Frame
 local confirmLabel: TextLabel
@@ -276,16 +278,22 @@ local function build()
 	actionList.Parent = actionRow
 
 	oddsTableButton = makeButton(actionRow, {
-		Size = UDim2.new(0.5, -4, 1, 0),
+		Size = UDim2.new(1 / 3, -6, 1, 0),
 		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
 		LayoutOrder = 1,
 	})
-	sellButton = makeButton(actionRow, {
-		Size = UDim2.new(0.5, -4, 1, 0),
+	battleButton = makeButton(actionRow, {
+		Size = UDim2.new(1 / 3, -6, 1, 0),
 		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
 		LayoutOrder = 2,
+	})
+	sellButton = makeButton(actionRow, {
+		Size = UDim2.new(1 / 3, -6, 1, 0),
+		TextSize = 15,
+		Font = Enum.Font.GothamMedium,
+		LayoutOrder = 3,
 	})
 
 	enhanceButton = makeButton(bottomPanel, {
@@ -375,6 +383,7 @@ local function render()
 	local data = ClientState.getData()
 
 	oddsTableButton.Text = Locale.get(language, "ui.oddsTable")
+	battleButton.Text = Locale.get(language, "ui.battle")
 	sellButton.Text = Locale.get(language, "ui.sell")
 	confirmYes.Text = Locale.get(language, "ui.confirm")
 	confirmNo.Text = Locale.get(language, "ui.cancel")
@@ -579,6 +588,10 @@ function UIController.Init()
 
 	oddsTableButton.Activated:Connect(function()
 		OddsTableController.toggle()
+	end)
+
+	battleButton.Activated:Connect(function()
+		BattleController.openTargetList()
 	end)
 
 	sellButton.Activated:Connect(openSellConfirm)

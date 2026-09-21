@@ -19,6 +19,7 @@ Remotes.Functions = {
 	RenameWeapon = "RenameWeapon", -- 무기 이름 변경(필터링 후 저장)
 	GetState = "GetState", -- 접속 직후 현재 데이터 + 확률 조회 (복제 이벤트를 놓쳤을 때의 보정)
 	GetOdds = "GetOdds", -- 현재 레벨 기준 최종 확률표 조회
+	GetBattleTargets = "GetBattleTargets", -- 같은 서버에서 도전할 수 있는 상대 목록
 	ChallengeBattle = "ChallengeBattle", -- 배틀 도전 신청
 	RespondBattle = "RespondBattle", -- 도전 수락/거절
 	SetSetting = "SetSetting", -- 사운드/언어 설정 변경

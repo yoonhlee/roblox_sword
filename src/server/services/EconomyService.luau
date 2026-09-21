@@ -166,6 +166,27 @@ function EconomyService.spendTickets(
 	return true
 end
 
+--[[
+	UTC 기준으로 날짜가 바뀌었으면 하루짜리 기록을 초기화한다.
+	배틀 횟수와 오늘 상대 목록이 여기서 비워진다.
+	새 날이면 true 를 반환한다(출석 보상 지급 판단에 쓴다).
+]]
+function EconomyService.rolloverDaily(data: Types.PlayerData, nowSeconds: number?): boolean
+	local today = math.floor((nowSeconds or os.time()) / 86400)
+
+	if data.daily.lastLoginDay == today then
+		return false
+	end
+
+	local isConsecutive = data.daily.lastLoginDay == today - 1
+	data.daily.streak = if isConsecutive then data.daily.streak + 1 else 1
+	data.daily.lastLoginDay = today
+	data.daily.battlesToday = 0
+	data.daily.opponentsToday = {}
+
+	return true
+end
+
 function EconomyService.Init() end
 
 function EconomyService.Start() end

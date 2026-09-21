@@ -33,6 +33,7 @@ local Format = require(Shared:WaitForChild("Pure"):WaitForChild("Format"))
 local services = script.Parent
 local DataService = require(services:WaitForChild("DataService"))
 local EnhanceService = require(services:WaitForChild("EnhanceService"))
+local BattleService = require(services:WaitForChild("BattleService"))
 
 local ChatCommandService = {}
 ChatCommandService.Name = "ChatCommandService"
@@ -95,6 +96,26 @@ local function onSellCommand(player: Player)
 	end
 
 	replyKey(player, "chat.sold", Format.comma(response.goldGained))
+end
+
+local function onBattleCommand(player: Player, arguments: { string })
+	local targetUserId: number? = nil
+
+	if #arguments > 0 then
+		local name = table.concat(arguments, " ")
+		local target = BattleService.findTargetByName(name)
+
+		if target == nil then
+			replyKey(player, "error.not_found")
+			return
+		end
+		targetUserId = target.UserId
+	end
+
+	local response = BattleService.requestChallenge(player, targetUserId)
+	if not response.ok then
+		replyKey(player, `error.{response.reason}`)
+	end
 end
 
 local function onOddsCommand(player: Player)
@@ -160,6 +181,12 @@ local COMMANDS: { CommandSpec } = {
 		handler = function(player, _)
 			onSellCommand(player)
 		end,
+	},
+	{
+		name = "ForgeBattleCommand",
+		primary = "/배틀",
+		secondary = "/battle",
+		handler = onBattleCommand,
 	},
 	{
 		name = "ForgeOddsCommand",

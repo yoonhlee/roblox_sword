@@ -93,15 +93,36 @@ export type SellResponse = SellSuccess | Failure
 
 export type BattleOutcomeSide = "win" | "loss"
 
-export type BattleResult = {
-	ok: true,
-	outcome: BattleOutcomeSide,
+-- 같은 서버에서 도전할 수 있는 상대 (공개해도 되는 정보만)
+export type BattleTarget = {
+	userId: number,
+	name: string,
+	level: number,
+	rating: number,
+}
+
+export type BattleInvitePayload = {
+	challengerUserId: number,
+	challengerName: string,
+	challengerLevel: number,
+	expiresAt: number, -- os.time() 기준
+}
+
+-- 배틀이 끝난 뒤 양쪽 클라이언트에 보내는 연출용 정보
+export type BattleResultPayload = {
+	won: boolean,
 	goldGained: number,
 	ratingBefore: number,
 	ratingAfter: number,
-	rewardCapped: boolean, -- 일일 보상 한도 초과로 보상이 0인 경우 true
+	opponentName: string,
+	opponentLevel: number,
+	myLevel: number,
+	winProbability: number,
+	rewardCapped: boolean,
 }
 
-export type BattleResponse = BattleResult | Failure
+export type Success = { ok: true }
+
+export type BattleResponse = Success | Failure
 
 return Types
