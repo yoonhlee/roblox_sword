@@ -2,6 +2,9 @@
 # 최초 1회: `selene generate-roblox-std` → roblox.toml 생성 (.gitignore 처리됨)
 std = "roblox"
 
+# vendor 는 외부 라이브러리 원본이라 우리가 고치지 않는다.
+exclude = ["src/server/vendor/**"]
+
 [lints]
 # Rojo 프로젝트에서 자주 오탐이 나는 규칙 완화
 mixed_table = "warn"

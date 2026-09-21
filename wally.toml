@@ -13,6 +13,9 @@ realm = "shared"
 # ProfileStore: 세션 락이 걸린 주기적 DataStore 저장 라이브러리 (MadStudioRoblox).
 # 패키지명/버전은 공식 저장소의 wally.toml 에서 확인했다
 # (https://github.com/MadStudioRoblox/ProfileStore, realm = server).
-ProfileStore = "lm-loleris/profilestore@1.0.3"
+# ProfileStore 는 src/server/vendor/ 에 파일로 포함되어 있어서 Wally 없이도 동작한다.
+# Wally 로 관리하고 싶다면 아래 줄의 주석을 풀고 src/server/vendor/ 를 지우면 된다.
+# DataService 는 두 위치를 모두 찾아본다.
+# ProfileStore = "lm-loleris/profilestore@1.0.3"
 
 [dev-dependencies]

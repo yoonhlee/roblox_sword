@@ -46,23 +46,38 @@ local dataChangedRemote: RemoteEvent? = nil
 
 --[[
 	ProfileStore 모듈을 가져온다.
-	설치가 안 되어 있으면 무엇을 해야 하는지 알려 주고 멈춘다
-	(WaitForChild 로 조용히 영원히 기다리면 원인을 찾기 어렵다).
+
+	두 위치를 순서대로 찾는다.
+	  1) ServerScriptService/Server/vendor/ProfileStore  (저장소에 포함된 사본)
+	  2) ServerStorage/ServerPackages/ProfileStore        (Wally 로 설치한 경우)
+
+	둘 다 없으면 무엇을 해야 하는지 알려 주고 멈춘다.
+	(WaitForChild 로 조용히 영원히 기다리면 원인을 찾기 어렵다.)
 ]]
 local function requireProfileStore(): any
-	local packages = ServerStorage:FindFirstChild("ServerPackages")
-	local module = packages and packages:FindFirstChild("ProfileStore")
+	-- 1) 저장소에 포함된 사본. services 폴더의 형제인 vendor 폴더에 있다.
+	local serverRoot = script.Parent.Parent
+	local vendor = serverRoot and serverRoot:FindFirstChild("vendor")
+	local vendored = vendor and vendor:FindFirstChild("ProfileStore")
 
-	if not module or not module:IsA("ModuleScript") then
-		error(
-			"[DataService] ProfileStore 모듈을 찾을 수 없습니다.\n"
-				.. "저장소 루트에서 `wally install` 을 실행한 뒤 Rojo 로 다시 동기화해 주세요.\n"
-				.. "(ServerStorage/ServerPackages/ProfileStore 위치에 있어야 합니다)",
-			0
-		)
+	if vendored and vendored:IsA("ModuleScript") then
+		return require(vendored)
 	end
 
-	return require(module)
+	-- 2) Wally 로 설치한 경우
+	local packages = ServerStorage:FindFirstChild("ServerPackages")
+	local installed = packages and packages:FindFirstChild("ProfileStore")
+
+	if installed and installed:IsA("ModuleScript") then
+		return require(installed)
+	end
+
+	error(
+		"[DataService] ProfileStore 모듈을 찾을 수 없습니다.\n"
+			.. "Rojo 동기화가 제대로 됐는지 확인해 주세요.\n"
+			.. "(ServerScriptService/Server/vendor/ProfileStore 에 있어야 합니다)",
+		0
+	)
 end
 
 -- 새 플레이어의 기본 데이터. ProfileStore 가 이 표를 깊은 복사해서 쓴다.

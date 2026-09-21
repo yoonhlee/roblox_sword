@@ -16,7 +16,6 @@ local TweenService = game:GetService("TweenService")
 local EffectsController = {}
 EffectsController.Name = "EffectsController"
 
-local gui: ScreenGui? = nil
 local centerFrame: Frame? = nil
 local levelLabel: TextLabel? = nil
 local flash: Frame? = nil
@@ -25,7 +24,6 @@ local BASE_TEXT_SIZE = 72
 
 -- UIController 가 자기 UI 요소를 넘겨 준다.
 function EffectsController.bind(targetGui: ScreenGui, center: Frame, label: TextLabel)
-	gui = targetGui
 	centerFrame = center
 	levelLabel = label
 	BASE_TEXT_SIZE = label.TextSize

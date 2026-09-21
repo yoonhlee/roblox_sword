@@ -10,7 +10,6 @@
 	DataService.replicate(player) 를 한 번만 호출한다.
 ]]
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")

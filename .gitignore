@@ -7,6 +7,10 @@ wally.lock
 # Rojo / 빌드 산출물
 *.rbxl
 *.rbxlx
+
+# 예외: 바로 열어 볼 수 있도록 커밋해 두는 플레이스 파일
+# (rojo build -o ForgeFever.rbxlx 로 다시 만들 수 있다)
+!ForgeFever.rbxlx
 *.rbxm
 *.rbxmx
 *.rbxl.lock

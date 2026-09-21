@@ -8,6 +8,24 @@
 
 ---
 
+## 0. 바로 해 보기
+
+터미널 없이 **Roblox Studio 하나로** 게임을 켜 볼 수 있다.
+
+1. 이 저장소의 **`ForgeFever.rbxlx`** 를 내려받는다
+   (GitHub 에서 파일을 클릭 → 오른쪽 위 **Download raw file**)
+2. 더블클릭하면 Roblox Studio 가 열린다
+3. 상단 **Play** 버튼(▶)을 누른다
+
+자세한 절차와 확인할 목록, 문제가 생겼을 때 대처법은
+**[docs/시작하기.md](docs/시작하기.md)** 에 정리해 뒀다.
+
+> `ForgeFever.rbxlx` 는 `src/` 를 Rojo 로 빌드한 **특정 시점의 사진**이다.
+> 코드를 고쳤다면 `rojo build -o ForgeFever.rbxlx` 로 다시 만들어야 반영된다.
+> 계속 개발할 때는 아래 Rojo 연결 방식을 쓴다.
+
+---
+
 ## 1. 개발 환경 준비
 
 ### 1-1. 툴 설치
@@ -23,15 +41,13 @@ rokit install       # rokit.toml 의 rojo / wally / selene / stylua / lune 설�
 > 설치가 실패하면 `rokit add rojo-rbx/rojo` 처럼 버전 없이 추가해 최신 릴리스로
 > 다시 고정하고 `rokit.toml` 을 커밋해 줘.
 
-### 1-2. 패키지 설치
+### 1-2. 패키지 설치 (지금은 필요 없음)
 
-```bash
-wally install       # Packages/ 와 ServerPackages/ 생성 (git 에는 올리지 않음)
-```
+현재 외부 패키지 의존성이 없다. 데이터 저장 라이브러리인 **ProfileStore 는
+`src/server/vendor/` 에 파일로 포함**되어 있어서 Wally 없이도 동작한다
+(출처와 라이선스는 `src/server/vendor/README.md` 참고).
 
-> 이 단계에서 ProfileStore(세션 락이 걸린 데이터 저장 라이브러리)가 설치된다.
-> 설치가 안 된 상태로 서버를 켜면 DataService 가 "`wally install` 을 실행하라"는
-> 메시지를 남기고 멈추므로, 원인을 못 찾고 헤맬 일은 없다.
+나중에 패키지를 추가하면 그때 `wally install` 을 실행한다.
 
 ### 1-3. Selene 표준 라이브러리 생성
 

@@ -1,5 +1,11 @@
 {
   "name": "ForgeFever",
+
+  "globIgnorePaths": [
+    "**/*.md",
+    "**/*.txt"
+  ],
+
   "tree": {
     "$className": "DataModel",
 
@@ -9,8 +15,7 @@
         "$path": "src/shared"
       },
       "Packages": {
-        "$path": "Packages",
-        "$optional": true
+        "$path": { "optional": "Packages" }
       }
     },
 
@@ -24,8 +29,7 @@
     "ServerStorage": {
       "$className": "ServerStorage",
       "ServerPackages": {
-        "$path": "ServerPackages",
-        "$optional": true
+        "$path": { "optional": "ServerPackages" }
       }
     },
 
