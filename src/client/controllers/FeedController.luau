@@ -9,6 +9,7 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TextChatService = game:GetService("TextChatService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -24,6 +25,7 @@ local MAX_LINES = 7
 local NARROW_WIDTH = 700
 
 local OUTCOME_COLOR: { [string]: Color3 } = {
+	system = Color3.fromRGB(230, 226, 220),
 	success = Color3.fromRGB(255, 208, 112),
 	keep = Color3.fromRGB(198, 198, 198),
 	destroy = Color3.fromRGB(255, 120, 108),
@@ -32,7 +34,9 @@ local OUTCOME_COLOR: { [string]: Color3 } = {
 }
 
 local container: Frame? = nil
+local toggleButton: TextButton? = nil
 local lineCount = 0
+local collapsed = false
 
 local function layout()
 	local frame = container
@@ -43,16 +47,30 @@ local function layout()
 	local viewport = Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize
 	local isNarrow = viewport ~= nil and viewport.X < NARROW_WIDTH
 
+	local button = toggleButton
+
 	if isNarrow then
-		-- 모바일: 화면 위쪽에 가로로 넓게
+		-- 모바일: 화면 위쪽에 가로로 넓게, 접을 수 있게
 		frame.AnchorPoint = Vector2.new(0.5, 0)
 		frame.Position = UDim2.new(0.5, 0, 0, 64)
-		frame.Size = UDim2.new(1, -24, 0, 132)
+		frame.Size = UDim2.new(1, -24, 0, if collapsed then 0 else 132)
+		frame.Visible = not collapsed
+
+		if button then
+			button.Visible = true
+			button.AnchorPoint = Vector2.new(0.5, 0)
+			button.Position = UDim2.new(0.5, 0, 0, if collapsed then 64 else 200)
+		end
 	else
-		-- 데스크톱: 우측 세로
+		-- 데스크톱: 우측 세로 (항상 펼침)
 		frame.AnchorPoint = Vector2.new(1, 0)
 		frame.Position = UDim2.new(1, -16, 0, 72)
 		frame.Size = UDim2.new(0, 320, 0, 220)
+		frame.Visible = true
+
+		if button then
+			button.Visible = false
+		end
 	end
 end
 
@@ -90,12 +108,58 @@ local function build()
 	list.Padding = UDim.new(0, 2)
 	list.Parent = frame
 
+	-- 모바일에서 피드를 접었다 펼치는 버튼 (최소 터치 영역 44px)
+	local toggle = Instance.new("TextButton")
+	toggle.Name = "FeedToggle"
+	toggle.BackgroundColor3 = Color3.fromRGB(52, 46, 58)
+	toggle.BorderSizePixel = 0
+	toggle.Font = Enum.Font.GothamMedium
+	toggle.TextSize = 13
+	toggle.TextColor3 = Color3.fromRGB(230, 226, 220)
+	toggle.Size = UDim2.fromOffset(84, 44)
+	toggle.Visible = false
+	toggle.Parent = gui
+
+	local toggleCorner = Instance.new("UICorner")
+	toggleCorner.CornerRadius = UDim.new(0, 10)
+	toggleCorner.Parent = toggle
+
+	toggle.Activated:Connect(function()
+		collapsed = not collapsed
+		layout()
+	end)
+
 	container = frame
+	toggleButton = toggle
 	layout()
 
 	local camera = Workspace.CurrentCamera
 	if camera then
 		camera:GetPropertyChangedSignal("ViewportSize"):Connect(layout)
+	end
+end
+
+--[[
+	기본 채팅창에도 같은 내용을 띄운다.
+	TextChannel:DisplaySystemMessage() 는 공식 문서상 클라이언트에서만 호출할 수 있고,
+	그 메시지는 이 플레이어에게만 보인다. 그래서 전체 공지는 서버가 리모트로
+	모든 클라이언트에 보내고, 각자 자기 채팅창에 띄우는 구조를 쓴다.
+]]
+local function displayInChat(text: string)
+	if TextChatService.ChatVersion ~= Enum.ChatVersion.TextChatService then
+		return
+	end
+
+	local channels = TextChatService:FindFirstChild("TextChannels")
+	local general = channels and channels:FindFirstChild("RBXGeneral")
+
+	if general and general:IsA("TextChannel") then
+		local ok, err = pcall(function()
+			general:DisplaySystemMessage(text)
+		end)
+		if not ok then
+			warn(`[FeedController] 채팅 표시 실패: {err}`)
+		end
 	end
 end
 
@@ -155,6 +219,11 @@ end
 
 function FeedController.Init()
 	build()
+
+	local button = toggleButton
+	if button then
+		button.Text = Locale.get(ClientState.getLanguage(), "ui.feedToggle")
+	end
 end
 
 function FeedController.Start()
@@ -168,16 +237,19 @@ function FeedController.Start()
 
 		if payload.kind == "broadcast" then
 			local language = ClientState.getLanguage()
-			push(
-				Locale.get(
-					language,
-					"feed.broadcast",
-					tostring(payload.playerName),
-					Locale.get(language, tostring(payload.weaponKey)),
-					tonumber(payload.level) or 0
-				),
-				OUTCOME_COLOR.broadcast
+			local text = Locale.get(
+				language,
+				"feed.broadcast",
+				tostring(payload.playerName),
+				Locale.get(language, tostring(payload.weaponKey)),
+				tonumber(payload.level) or 0
 			)
+			push(text, OUTCOME_COLOR.broadcast)
+			displayInChat(text)
+		elseif payload.kind == "system" and type(payload.text) == "string" then
+			-- 채팅 명령어의 응답. 채팅창과 피드 양쪽에 남긴다.
+			push(payload.text, OUTCOME_COLOR.system)
+			displayInChat(payload.text)
 		end
 	end)
 end

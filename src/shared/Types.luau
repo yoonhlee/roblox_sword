@@ -82,6 +82,15 @@ export type EnhanceSuccess = {
 
 export type EnhanceResponse = EnhanceSuccess | Failure
 
+export type SellSuccess = {
+	ok: true,
+	goldGained: number,
+	gold: number,
+	odds: DisplayOdds,
+}
+
+export type SellResponse = SellSuccess | Failure
+
 export type BattleOutcomeSide = "win" | "loss"
 
 export type BattleResult = {

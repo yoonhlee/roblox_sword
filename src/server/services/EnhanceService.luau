@@ -222,6 +222,62 @@ local function handleEnhance(player: Player, useProtect: any): Types.EnhanceResp
 	return response
 end
 
+--[[
+	무기 판매. 현재 레벨의 판매가만큼 골드를 주고 레벨 0 으로 되돌린다.
+	강화와 같은 레이트 리밋/락을 쓴다.
+]]
+local function processSell(player: Player): Types.SellResponse
+	if LiveOpsService.isMaintenance() then
+		return fail("maintenance")
+	end
+
+	local data = DataService.getActiveData(player)
+	if data == nil then
+		return fail("not_ready")
+	end
+
+	local level = data.weapon.level
+	local value = EnhanceTable.SellValue[level]
+
+	if value == nil or value <= 0 then
+		return fail("nothing_to_sell")
+	end
+
+	local granted = EconomyService.addGold(player, data, value, "weapon_sell", true)
+	data.weapon.level = 0
+
+	return {
+		ok = true,
+		goldGained = granted,
+		gold = data.gold,
+		odds = buildDisplayOdds(0),
+	}
+end
+
+local function handleSell(player: Player): Types.SellResponse
+	if not limiter:consume(player.UserId) then
+		return fail("too_fast")
+	end
+	if not limiter:tryLock(player.UserId) then
+		return fail("busy")
+	end
+
+	local ok, response = xpcall(processSell, debug.traceback, player)
+
+	limiter:unlock(player.UserId)
+
+	if not ok then
+		warn(`[EnhanceService] 판매 처리 중 오류 ({player.UserId}):\n{response}`)
+		return fail("unknown")
+	end
+
+	if response.ok then
+		DataService.replicate(player)
+	end
+
+	return response
+end
+
 local function handleGetOdds(player: Player): Types.DisplayOdds | Types.Failure
 	local data = DataService.getData(player)
 	if data == nil then
@@ -256,6 +312,9 @@ function EnhanceService.Init()
 	local enhanceRemote = remotesFolder:WaitForChild(Remotes.Functions.Enhance) :: RemoteFunction
 	enhanceRemote.OnServerInvoke = handleEnhance
 
+	local sellRemote = remotesFolder:WaitForChild(Remotes.Functions.SellWeapon) :: RemoteFunction
+	sellRemote.OnServerInvoke = handleSell
+
 	local oddsRemote = remotesFolder:WaitForChild(Remotes.Functions.GetOdds) :: RemoteFunction
 	oddsRemote.OnServerInvoke = handleGetOdds
 
@@ -271,7 +330,19 @@ function EnhanceService.Start()
 	end)
 end
 
--- 다른 서비스/테스트에서 쓸 수 있도록 공개
+--[[
+	버튼과 채팅 명령이 "같은 서버 경로"를 타도록 공개한다.
+	ChatCommandService 는 이 함수를 호출하며, 리모트 핸들러와 완전히 같은
+	검증·레이트 리밋·락을 거친다.
+]]
+function EnhanceService.requestEnhance(player: Player, useProtect: boolean?): Types.EnhanceResponse
+	return handleEnhance(player, useProtect)
+end
+
+function EnhanceService.requestSell(player: Player): Types.SellResponse
+	return handleSell(player)
+end
+
 function EnhanceService.getDisplayOdds(level: number): Types.DisplayOdds
 	return buildDisplayOdds(level)
 end

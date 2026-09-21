@@ -27,6 +27,7 @@ local SERVICE_ORDER = {
 	"LiveOpsService",
 	"EconomyService",
 	"EnhanceService",
+	"ChatCommandService",
 	"BattleService",
 	"ShopService",
 	"CodexService",
