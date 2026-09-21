@@ -29,6 +29,7 @@ local ConfigFolder = Shared:WaitForChild("Config")
 local GameConfig = require(ConfigFolder:WaitForChild("Game"))
 local EconomyConfig = require(ConfigFolder:WaitForChild("EconomyConfig"))
 local Weapons = require(ConfigFolder:WaitForChild("Weapons"))
+local Products = require(ConfigFolder:WaitForChild("Products"))
 
 local DataService = {}
 DataService.Name = "DataService"
@@ -92,7 +93,7 @@ local function buildTemplate(): Types.PlayerData
 			battlesToday = 0,
 			opponentsToday = {},
 		},
-		purchaseHistory = {},
+		purchaseHistory = {} :: { string },
 		settings = {
 			sfx = true,
 			language = GameConfig.DEFAULT_LANGUAGE,
@@ -111,11 +112,31 @@ local function migrate(data: Types.PlayerData): Types.PlayerData
 	end
 
 	-- 스키마 버전을 올릴 때마다 아래에 단계를 하나씩 추가한다.
-	-- 예시)
-	-- if data.schemaVersion == 1 then
-	--     data.newField = 계산값
-	--     data.schemaVersion = 2
-	-- end
+	-- 각 단계는 "이전 버전 데이터를 버리지 않고" 새 형태로 옮기기만 한다.
+
+	-- v1 → v2: purchaseHistory 를 딕셔너리에서 배열로 옮긴다.
+	-- (배열이어야 오래된 기록부터 버려 크기를 일정하게 유지할 수 있다)
+	if data.schemaVersion == 1 then
+		local history = data.purchaseHistory :: any
+		local migrated: { string } = {}
+
+		if type(history) == "table" then
+			for key, value in history do
+				if type(key) == "string" and value == true then
+					table.insert(migrated, key)
+				elseif type(value) == "string" then
+					table.insert(migrated, value) -- 이미 배열인 경우
+				end
+			end
+		end
+
+		while #migrated > Products.PURCHASE_HISTORY_LIMIT do
+			table.remove(migrated, 1)
+		end
+
+		data.purchaseHistory = migrated
+		data.schemaVersion = 2
+	end
 
 	if data.schemaVersion > Types.SCHEMA_VERSION then
 		-- 더 새로운 버전으로 저장된 데이터. 덮어쓰면 손실이 나므로 건드리지 않는다.

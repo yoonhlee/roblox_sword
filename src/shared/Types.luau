@@ -8,7 +8,7 @@
 local Types = {}
 
 -- 현재 저장 스키마 버전. PlayerData.schemaVersion 의 기준값.
-Types.SCHEMA_VERSION = 1
+Types.SCHEMA_VERSION = 2
 
 export type WeaponState = {
 	id: string, -- Config/Weapons 의 키
@@ -48,7 +48,10 @@ export type PlayerData = {
 	codex: { [string]: boolean }, -- "weaponId:level" 달성 여부
 	achievements: { [string]: boolean },
 	daily: DailyState,
-	purchaseHistory: { [string]: boolean }, -- ProcessReceipt 중복 방지 (PurchaseId)
+	-- ProcessReceipt 중복 지급 방지용 PurchaseId 목록.
+	-- 배열인 이유: 오래된 것부터 버려서 크기를 일정하게 유지해야 하기 때문이다.
+	-- (스키마 v1 에서는 { [id]: true } 딕셔너리였고 v2 에서 배열로 옮겼다)
+	purchaseHistory: { string },
 	settings: PlayerSettings,
 	bannedUntil: number?,
 }
@@ -129,6 +132,15 @@ export type TicketPurchaseSuccess = {
 }
 
 export type TicketPurchaseResponse = TicketPurchaseSuccess | Failure
+
+-- 상점에 보여 줄 항목 (클라이언트는 ID 를 알 필요가 없다)
+export type ShopItem = {
+	key: string,
+	kind: "gamepass" | "product",
+	owned: boolean,
+	goldAmount: number,
+	ticketAmount: number,
+}
 
 export type BattleResponse = Success | Failure
 

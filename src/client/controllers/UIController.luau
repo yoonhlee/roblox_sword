@@ -30,6 +30,7 @@ local SoundController = require(controllers:WaitForChild("SoundController"))
 local EffectsController = require(controllers:WaitForChild("EffectsController"))
 local OddsTableController = require(controllers:WaitForChild("OddsTableController"))
 local BattleController = require(controllers:WaitForChild("BattleController"))
+local ShopController = require(controllers:WaitForChild("ShopController"))
 
 local UIController = {}
 UIController.Name = "UIController"
@@ -65,6 +66,7 @@ local protectButton: TextButton
 local oddsTableButton: TextButton
 local sellButton: TextButton
 local battleButton: TextButton
+local shopButton: TextButton
 local enhanceButton: TextButton
 local confirmPanel: Frame
 local confirmLabel: TextLabel
@@ -287,22 +289,28 @@ local function build()
 	actionList.Parent = actionRow
 
 	oddsTableButton = makeButton(actionRow, {
-		Size = UDim2.new(1 / 3, -6, 1, 0),
+		Size = UDim2.new(0.25, -6, 1, 0),
 		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
 		LayoutOrder = 1,
 	})
 	battleButton = makeButton(actionRow, {
-		Size = UDim2.new(1 / 3, -6, 1, 0),
+		Size = UDim2.new(0.25, -6, 1, 0),
 		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
 		LayoutOrder = 2,
 	})
 	sellButton = makeButton(actionRow, {
-		Size = UDim2.new(1 / 3, -6, 1, 0),
+		Size = UDim2.new(0.25, -6, 1, 0),
 		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
 		LayoutOrder = 3,
+	})
+	shopButton = makeButton(actionRow, {
+		Size = UDim2.new(0.25, -6, 1, 0),
+		TextSize = 15,
+		Font = Enum.Font.GothamMedium,
+		LayoutOrder = 4,
 	})
 
 	enhanceButton = makeButton(bottomPanel, {
@@ -393,6 +401,7 @@ local function render()
 
 	oddsTableButton.Text = Locale.get(language, "ui.oddsTable")
 	battleButton.Text = Locale.get(language, "ui.battle")
+	shopButton.Text = Locale.get(language, "ui.shop")
 	sellButton.Text = Locale.get(language, "ui.sell")
 	confirmYes.Text = Locale.get(language, "ui.confirm")
 	confirmNo.Text = Locale.get(language, "ui.cancel")
@@ -674,6 +683,10 @@ function UIController.Init()
 
 	battleButton.Activated:Connect(function()
 		BattleController.openTargetList()
+	end)
+
+	shopButton.Activated:Connect(function()
+		ShopController.toggle()
 	end)
 
 	sellButton.Activated:Connect(openSellConfirm)
