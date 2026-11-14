@@ -441,6 +441,15 @@ local function render()
 	local language = ClientState.getLanguage()
 	local data = ClientState.getData()
 
+	-- 경주 중에는 화면 전체를, 대장간을 접었을 때는 무기와 조작 패널만 숨긴다(재화 바는 남긴다).
+	gui.Enabled = not ClientState.isInRace()
+	local forgeOpen = ClientState.isForgeOpen()
+	centerFrame.Visible = forgeOpen
+	bottomPanel.Visible = forgeOpen
+	if not forgeOpen then
+		renamePanel.Visible = false
+	end
+
 	oddsTableButton.Text = Locale.get(language, "ui.oddsTable")
 	swordsButton.Text = Locale.get(language, "ui.swords")
 	shopButton.Text = Locale.get(language, "ui.shop")

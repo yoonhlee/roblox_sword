@@ -22,6 +22,7 @@ type Service = {
 
 -- 의존 순서대로 나열한다. 여기 없는 모듈은 생명주기 없는 유틸로 간주하고 건너뛴다.
 local SERVICE_ORDER = {
+	"WorldService", -- 로비 바닥이 가장 먼저 있어야 한다
 	"DataService",
 	"AnalyticsService",
 	"LiveOpsService",
@@ -29,6 +30,8 @@ local SERVICE_ORDER = {
 	"CodexService",
 	"EnhanceService",
 	"SwordService",
+	"TreadmillService",
+	"RaceService",
 	"ChatCommandService",
 	"ShopService",
 	"LeaderboardService",

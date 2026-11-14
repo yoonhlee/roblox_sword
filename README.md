@@ -4,7 +4,8 @@
 게임. 모바일 우선 UI, 한국어 기본 + 영어 지원.
 
 > **기획 기준은 [docs/통합-기획서.md](docs/통합-기획서.md)**, 지금 코드 상태는 `CLAUDE.md` 4절이다.
-> 지금 코드에는 강화(2구간)와 검 보관함·뽑기·도감까지 들어 있고, 경주·트레드밀·방지권 상품은 아직 없다.
+> 지금 코드에는 강화(2구간), 검 보관함·뽑기·도감, 추격 생존 경주와 로비 트레드밀, 방지권 상품 틀(ID·확률은 미정이라
+> 상점에는 아직 안 보인다)까지 들어 있다. Studio 실동작은 아직 확인 전이다.
 > 이 README 의 아래 내용 중 "2인 테스트", "출시 체크리스트", "수익화 정책 메모"에는 옛 기획(배틀, 게임패스,
 > 골드 팩) 설명이 남아 있다. 다르면 통합 기획서를 따른다.
 
@@ -112,7 +113,7 @@ rojo serve                  # Studio 동기화 서버
 rojo build -o build.rbxlx   # 플레이스 파일 빌드
 wally install               # 패키지 설치
 
-lune run tests/run          # 순수 로직 테스트 전체 실행 (83개)
+lune run tests/run          # 순수 로직 테스트 전체 실행 (154개)
 lune run tools/simulate_economy   # 경제 시뮬레이션
 stylua src tests tools      # 포맷
 selene src tests tools      # 린트
@@ -156,11 +157,11 @@ selene.toml / stylua.toml
 
 src/server/              → ServerScriptService
   init.server.luau       서비스 부트스트랩 (Init → Start 순서 보장)
-  services/              DataService, EnhanceService, BattleService, ...
+  services/              DataService, EnhanceService, RaceService, ShopService, ...
 
 src/client/              → StarterPlayerScripts
   init.client.luau       컨트롤러 부트스트랩
-  controllers/           UIController, FeedController, SoundController
+  controllers/           UIController, LobbyController, RaceController, ShopController, ...
 
 src/shared/              → ReplicatedStorage
   Types.luau             저장 스키마와 리모트 페이로드 타입
@@ -190,7 +191,13 @@ Studio 실동작은 아직 확인 전이다.)
 - "기록": 도감(검마다 최고 레벨과 5·10·15·20강 기념) / 랭킹(최고 강화) / 설정(소리·언어).
 - 채팅 명령어 `/강화 [보호]`, `/확률`, `/정보`, `/도움말`. 15강 이상 성공은 서버 전체 알림.
 - 검 이름 짓기(로블록스 필터를 통과한 이름만), 출석·15분 플레이 보상, 첫 접속 안내.
-- "상점": 상품 ID 를 넣기 전에는 비어 있다(방지권 상품은 아직 만들지 않았다).
+- 로비: 접속하면 블록으로 지은 로비에 선다. "대장간 접기"로 강화 패널을 접고 돌아다닐 수 있다.
+- 트레드밀: 로비 한쪽의 초록 발판 위에 있으면 20초마다 100골드.
+- 경주: "경주 매칭" → 10초 안에 출발선 → 뒤에서 점점 빨라지는 추격자(빨간 벽)에게 잡히면 탈락.
+  잡히는 순간 `착용 검 레벨의 강화 비용 × 배율 × 달린 비율` 만큼 골드를 받는다. 탈락 후 관전하거나 "로비로".
+  거리는 서버가 계산한다(클라이언트가 보낸 값은 쓰지 않는다).
+- "상점": 방지권 상품 3종(확정 1개 / 확정 묶음 / 확률형 + 천장 포인트)과 파편 뽑기.
+  상품 ID·개수·확률이 아직 미정이라 **지금은 비어 보인다**. `src/shared/Config/Products.luau` 를 채우면 나타난다.
 
 ### 코드 규칙
 

@@ -23,6 +23,10 @@ local liveOps: { maintenance: boolean, notice: string, event: any } = {
 }
 -- "방지권 사용" 스위치. 강화 요청에 실어 보내고, 화면의 확률 표시도 이 값에 따라 바뀐다.
 local useProtect = false
+-- 경주 화면이 떠 있는 동안(출발선 ~ 로비 복귀)은 대장간 화면을 숨긴다.
+local inRace = false
+-- 대장간 화면(무기·강화 버튼)을 펴 둘지. 접으면 로비를 돌아다니기 편하다.
+local forgeOpen = true
 local listeners: { () -> () } = {}
 
 local function notify()
@@ -85,6 +89,28 @@ end
 -- 방지권이 실제로 효과를 내는 상태인지 (스위치가 켜져 있고 방지권이 1개 이상)
 function ClientState.isProtectActive(): boolean
 	return useProtect and data ~= nil and data.protectTickets > 0
+end
+
+function ClientState.isInRace(): boolean
+	return inRace
+end
+
+function ClientState.setInRace(value: boolean)
+	if inRace ~= value then
+		inRace = value
+		notify()
+	end
+end
+
+function ClientState.isForgeOpen(): boolean
+	return forgeOpen
+end
+
+function ClientState.setForgeOpen(value: boolean)
+	if forgeOpen ~= value then
+		forgeOpen = value
+		notify()
+	end
 end
 
 function ClientState.getLanguage(): string

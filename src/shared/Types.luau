@@ -61,7 +61,7 @@ export type PlayerData = {
 	swords: { [string]: SwordState }, -- 검 id → 상태. 같은 검을 두 개 가질 수 없다
 	equippedId: string, -- 착용 중인 검의 id (반드시 swords 에 있다)
 	swordCapacity: number, -- 소지 상한 (골드로 1칸씩 산다)
-	pityPoints: number, -- 방지권 확률형 상품의 천장 포인트 (상품은 아직 없다)
+	pityPoints: number, -- 방지권 확률형 상품의 천장 포인트 (꽝 1점, 3점이면 방지권 1개 후 0)
 	weapon: LegacyWeaponState?, -- 사용 안 함 (v3 까지의 무기. v4 에서 swords 로 옮겼다)
 	protectTickets: number, -- 방지권
 	stats: PlayerStats,
@@ -147,10 +147,120 @@ export type LeaderboardEntry = {
 	value: number,
 }
 
+--------------------------------------------------------------------------------
+-- 추격 생존 경주 (통합 기획서 4절)
+--------------------------------------------------------------------------------
+
+-- 경주에 함께 나간 사람 한 명 (다른 참가자에게 보여 주는 정보)
+export type RaceEntrant = {
+	userId: number,
+	name: string,
+	level: number, -- 출발할 때의 착용 검 레벨
+}
+
+-- 최종 순위표의 한 줄
+export type RaceRankingRow = {
+	rank: number,
+	userId: number,
+	name: string,
+	level: number,
+	distance: number, -- 서버가 인정한 거리(칸, 내림)
+}
+
+--[[
+	서버가 RaceUpdate 이벤트로 보내는 알림. kind 로 구분한다.
+	여기 있는 거리·보상·순위는 전부 서버가 계산한 값이다. 클라이언트는 표시만 한다.
+
+	  queue      대기열 상태. queued=false 면 대기열에서 빠졌다는 뜻
+	  lineup     출발선에 섰다. countdown 초 뒤에 출발
+	  start      출발
+	  eliminated 누군가(나 포함) 탈락했다
+	  result     내 결과 (탈락한 순간 보상이 이미 지급됐다)
+	  finished   모두 탈락해 판이 끝났다. returnIn 초 뒤 로비로 돌아간다
+	  lobby      로비로 돌아왔다
+]]
+export type RaceUpdate = {
+	kind: string,
+	raceId: number?,
+
+	-- queue
+	queued: boolean?,
+	count: number?, -- 대기 인원
+	secondsLeft: number?, -- 출발 신호까지 남은 시간(초)
+
+	-- lineup
+	countdown: number?,
+	originX: number?, -- 코스 출발선의 위치 (화면 표시용)
+	originZ: number?,
+	level: number?,
+	speed: number?,
+	maxDistance: number?,
+	entrants: { RaceEntrant }?,
+
+	-- eliminated / result
+	userId: number?,
+	rank: number?,
+	distance: number?,
+	reward: number?,
+	bonus: number?, -- 1~3위 보너스 (미정 D6, 지금은 항상 0)
+	racerCount: number?,
+
+	-- finished
+	ranking: { RaceRankingRow }?,
+	returnIn: number?,
+}
+
+-- 서버가 TreadmillUpdate 이벤트로 보내는 트레드밀 상태
+export type TreadmillUpdate = {
+	onPad: boolean,
+	progress: number, -- 이번 지급까지 채운 시간(초)
+	interval: number, -- 몇 초마다
+	gold: number, -- 몇 골드
+	paid: number, -- 방금 지급된 골드 (없으면 0)
+}
+
+--------------------------------------------------------------------------------
+-- 상점 (통합 기획서 7절)
+--------------------------------------------------------------------------------
+
+-- 뽑기 결과 한 줄. percent 는 화면에 보여 주는 값이며 한 목록의 합이 정확히 100 이다.
+export type ShopOutcome = {
+	tickets: number, -- 0 이면 꽝
+	percent: number,
+}
+
 -- 상점에 보여 줄 항목 (클라이언트는 상품 ID 를 알 필요가 없다)
 export type ShopItem = {
 	key: string,
-	ticketAmount: number,
+	kind: string, -- "fixed" | "random"
+	ticketAmount: number, -- fixed 일 때 받는 방지권 수
+	outcomes: { ShopOutcome }, -- random 일 때 모든 결과와 확률
 }
+
+export type ShopShardDraw = {
+	cost: number, -- 1회에 드는 파편
+	outcomes: { ShopOutcome },
+}
+
+--[[
+	상점 화면에 필요한 것 전부. 아직 등록되지 않았거나 내용이 비어 있는 상품은 들어 있지 않다.
+	유료 확률형이 제한된 유저(PolicyService)에게는 확률형 상품이 들어 있지 않다.
+	천장 포인트의 현재 값은 복제받은 PlayerData.pityPoints 를 쓴다.
+]]
+export type ShopState = {
+	items: { ShopItem },
+	pityPerMiss: number,
+	pityThreshold: number,
+	pityTickets: number,
+	shardDraw: ShopShardDraw?, -- 확률이 아직 없으면 nil
+}
+
+export type ShardDrawSuccess = {
+	ok: true,
+	tickets: number, -- 이번에 얻은 방지권 (0 이면 꽝)
+	shards: number, -- 남은 파편
+}
+
+export type ShardDrawResponse = ShardDrawSuccess | Failure
 
 return Types

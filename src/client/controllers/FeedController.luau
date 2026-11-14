@@ -33,6 +33,7 @@ local OUTCOME_COLOR: { [string]: Color3 } = {
 	broadcast = Color3.fromRGB(180, 255, 190),
 }
 
+local feedGui: ScreenGui? = nil
 local container: Frame? = nil
 local toggleButton: TextButton? = nil
 local lineCount = 0
@@ -129,6 +130,7 @@ local function build()
 		layout()
 	end)
 
+	feedGui = gui
 	container = frame
 	toggleButton = toggle
 	layout()
@@ -224,6 +226,14 @@ function FeedController.Init()
 	if button then
 		button.Text = Locale.get(ClientState.getLanguage(), "ui.feedToggle")
 	end
+
+	-- 경주 화면이 떠 있는 동안에는 피드를 숨긴다(쌓인 줄은 로비로 돌아오면 다시 보인다).
+	ClientState.onChanged(function()
+		local screen = feedGui
+		if screen then
+			screen.Enabled = not ClientState.isInRace()
+		end
+	end)
 end
 
 function FeedController.Start()

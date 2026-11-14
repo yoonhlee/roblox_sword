@@ -58,7 +58,8 @@ function AnalyticsService.logCurrency(
 		balanceAfter = balanceAfter,
 	})
 
-	if currency == "gold" and amount > 0 then
+	-- 서버가 계산한 큰 보상(경주)은 이상 탐지에서 뺀다. 넣으면 정상 유저마다 경고가 울린다.
+	if currency == "gold" and amount > 0 and not EconomyConfig.ANOMALY_EXEMPT_REASONS[reason] then
 		AnalyticsService.trackGoldGain(player, amount)
 	end
 end

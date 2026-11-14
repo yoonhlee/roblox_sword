@@ -36,9 +36,43 @@ EconomyConfig.DAILY_LOGIN_GOLD = { 100, 150, 200, 300, 400, 600, 1000 }
 EconomyConfig.PLAYTIME_REWARD_INTERVAL_SECONDS = 15 * 60
 EconomyConfig.PLAYTIME_REWARD_GOLD = 120
 
+--[[
+	로비 트레드밀 (통합 기획서 6절). 발판 위에 있으면 intervalSeconds 마다 gold 를 받는다.
+	[확정] 1단계: 20초당 100골드. 무료만(유료 트레드밀 없음). 자리 비움 제한 없음.
+	[미정 D18] 2단계 이상의 단계 수·수입·해금 방법은 아직 정해지지 않았다.
+	정해지면 여기에 줄을 추가하고 Config/World 의 TREADMILL_PADS 에 발판 위치를 넣으면 된다.
+]]
+export type TreadmillTier = {
+	id: string,
+	intervalSeconds: number,
+	gold: number,
+}
+
+EconomyConfig.TREADMILL_TIERS = {
+	{ id = "tier1", intervalSeconds = 20, gold = 100 },
+} :: { TreadmillTier }
+
+function EconomyConfig.treadmillTier(id: string): TreadmillTier?
+	for _, tier in EconomyConfig.TREADMILL_TIERS do
+		if tier.id == id then
+			return tier
+		end
+	end
+	return nil
+end
+
 -- 이상 탐지: 이 시간 안에 이만큼 이상 골드가 늘면 로그를 남긴다.
 EconomyConfig.ANOMALY_WINDOW_SECONDS = 60
 EconomyConfig.ANOMALY_GOLD_DELTA = 200000
+
+--[[
+	이상 탐지에서 빼는 획득 사유.
+	경주 보상은 서버가 거리와 레벨로 계산한 값이고 한 판에 수억 골드까지 정상적으로 나온다.
+	탐지에 넣으면 고레벨 유저마다 경고가 울려서 진짜 이상을 가린다.
+]]
+EconomyConfig.ANOMALY_EXEMPT_REASONS = {
+	race_reward = true,
+} :: { [string]: boolean }
 
 return EconomyConfig
 ]]></string>
@@ -195,36 +229,128 @@ return Game
             <string name="Name">Products</string>
             <string name="Source"><![CDATA[--!strict
 --[[
-	Products — 개발자 상품(Robux 로 사는 것) ID.
+	Products — 방지권 상품과 방지권 뽑기 설정 (통합 기획서 3-4절, 7절).
 
-	[개발자 입력 필요] Roblox 크리에이터 대시보드에서 상품을 만든 뒤 여기 ID 를 채운다.
-	ID 가 0 이면 해당 상품은 UI 에 노출되지 않는다(ShopService 가 걸러 냄).
+	[개발자 입력 필요] Roblox 크리에이터 대시보드에서 "개발자 상품"을 만든 뒤 productId 를 채운다.
+	[미정 D12] 묶음 개수, 확률형 결과·확률, 파편 뽑기 확률은 아직 정해지지 않았다. 그래서 비워 두었다.
+	**ID 나 내용이 비어 있는 상품은 상점에 보이지 않고 살 수도 없다** (isSellable / isDrawReady).
 
 	지킬 것 (통합 기획서 6·7절):
-	- 유료 상품은 방지권뿐이다. 골드 팩·게임패스는 없다.
-	- 골드나 파편을 주는 상품, 골드 획득량을 늘리는 상품은 만들지 않는다.
+	- 유료 상품은 방지권뿐이다. 골드·파편을 주거나 골드 획득량을 늘리는 상품은 만들지 않는다.
 	  (Robux 로 살 수 있는 화폐로 하는 강화는 로블록스 정책상 유료 확률형 아이템이 된다.)
-	  그래서 상품 정의에는 방지권 개수(ticketAmount)만 있다.
-	- 유료 확률형은 "방지권 확률형" 1종만 승인됐고, 아직 구현하지 않았다.
+	- 유료 확률형은 "방지권 확률형" 1종만 승인됐다. 다른 확률형 상품은 추가하지 않는다.
+	- 가격은 대시보드에서 정한다. 정할 때 **확률형 3회 가격 > 확정 1개 가격** 이어야 한다
+	  (아니면 꽝만 3번 나와도 확정 1개보다 싸게 방지권을 얻는다).
+	- 확률을 채우면 상점이 모든 결과를 %(합계 100%)로 보여 준다. 실제 추첨은 weight 그대로 한다.
+
+	결과 목록(outcomes) 쓰는 법: { tickets = 방지권 개수, weight = 비중 }
+	  tickets = 0 인 줄이 "꽝"이다. weight 는 합이 100 일 필요가 없다(비율만 맞으면 된다).
+	  예) { { tickets = 3, weight = 10 }, { tickets = 1, weight = 30 }, { tickets = 0, weight = 60 } }
 ]]
 
 local Products = {}
 
--- ticketAmount 는 지급량이며 서버에서만 사용한다.
+export type TicketOutcome = {
+	tickets: number, -- 받는 방지권 수. 0 이면 꽝
+	weight: number, -- 뽑힐 비중 (0 보다 커야 한다)
+}
+
 export type DeveloperProduct = {
 	key: string,
-	productId: number,
-	ticketAmount: number,
+	productId: number, -- 0 이면 아직 등록하지 않은 상품
+	kind: "fixed" | "random",
+	ticketAmount: number, -- fixed: 주는 방지권 수. random 은 0
+	outcomes: { TicketOutcome }, -- random: 결과 목록. fixed 는 빈 표
 }
 
 Products.DeveloperProducts = {
-	-- [미정 D12] 방지권 상품의 종류·개수·가격은 아직 정해지지 않았다.
-	-- 아래 5개 묶음은 프로토타입 때 넣은 임시값이다. ID 가 0 이라 상점에 보이지 않는다.
-	ticketPack = { key = "ticketPack", productId = 0, ticketAmount = 5 },
+	-- [확정] 확정 1개: 방지권 1개. 1개당 가격이 가장 비싼 상품.
+	ticketSingle = {
+		key = "ticketSingle",
+		productId = 0,
+		kind = "fixed",
+		ticketAmount = 1,
+		outcomes = {},
+	},
+
+	-- 확정 묶음: 방지권 여러 개. [미정 D12] 개수가 정해지면 ticketAmount 를 채운다.
+	ticketBundle = {
+		key = "ticketBundle",
+		productId = 0,
+		kind = "fixed",
+		ticketAmount = 0,
+		outcomes = {},
+	},
+
+	-- 확률형: 방지권 여러 개 중 확률. [미정 D12] 결과와 확률이 정해지면 outcomes 를 채운다.
+	ticketRandom = {
+		key = "ticketRandom",
+		productId = 0,
+		kind = "random",
+		ticketAmount = 0,
+		outcomes = {},
+	},
 } :: { [string]: DeveloperProduct }
+
+-- 상점에 보여 주는 순서
+Products.ORDER = { "ticketSingle", "ticketBundle", "ticketRandom" }
+
+--[[
+	[확정] 천장 포인트 (통합 기획서 7절).
+	확률형에서 꽝이 나오면 +PITY_PER_MISS 점, PITY_THRESHOLD 점이 되면 그 자리에서
+	방지권 PITY_TICKETS 개를 주고 0 점으로 돌아간다. 확률형 꽝에서만 생기고 다른 용도는 없다.
+]]
+Products.PITY_PER_MISS = 1
+Products.PITY_THRESHOLD = 3
+Products.PITY_TICKETS = 1
+
+--[[
+	파편 뽑기 (통합 기획서 3-4절). Robux 가 닿지 않는 무과금 경로다.
+	[확정] 파편 50개 = 뽑기 1회.
+	[미정 D12] 뽑기 확률. 정해지면 outcomes 를 채운다. 비어 있는 동안은 상점에 보이지 않는다.
+	천장 포인트는 여기서는 쌓이지 않는다(유료 확률형 꽝에서만 생긴다).
+]]
+Products.SHARD_DRAW = {
+	cost = 50,
+	outcomes = {} :: { TicketOutcome },
+}
 
 -- purchaseHistory 가 무한히 커지지 않도록 유지할 최근 기록 수
 Products.PURCHASE_HISTORY_LIMIT = 200
+
+-- 결과 목록이 뽑기에 쓸 수 있게 채워져 있는지
+function Products.isDrawReady(outcomes: { TicketOutcome }): boolean
+	if #outcomes == 0 then
+		return false
+	end
+
+	for _, outcome in outcomes do
+		local tickets = outcome.tickets
+		local weight = outcome.weight
+
+		if type(tickets) ~= "number" or tickets < 0 or tickets ~= math.floor(tickets) then
+			return false
+		end
+		if type(weight) ~= "number" or weight ~= weight or weight <= 0 or weight == math.huge then
+			return false
+		end
+	end
+
+	return true
+end
+
+-- 팔 수 있는 상품인지 (ID 가 있고 내용이 채워져 있다)
+function Products.isSellable(product: DeveloperProduct): boolean
+	if product.productId == 0 then
+		return false
+	end
+
+	if product.kind == "fixed" then
+		return product.ticketAmount > 0 and product.ticketAmount == math.floor(product.ticketAmount)
+	end
+
+	return Products.isDrawReady(product.outcomes)
+end
 
 -- productId → 상품 정의 역인덱스 (ProcessReceipt 에서 사용)
 function Products.byProductId(productId: number): DeveloperProduct?
@@ -236,11 +362,182 @@ function Products.byProductId(productId: number): DeveloperProduct?
 	return nil
 end
 
+--[[
+	설정이 스스로 일관된지 검사한다. 문제가 있으면 사유 문자열, 없으면 nil.
+	"아직 비어 있는 것"은 문제가 아니다(미정이라 비워 둔 것). 채웠는데 틀린 것만 잡는다.
+]]
+function Products.validate(): string?
+	local seenIds: { [number]: string } = {}
+
+	for key, product in Products.DeveloperProducts do
+		if product.key ~= key then
+			return `{key} 의 key 값이 "{product.key}" 입니다`
+		end
+		if table.find(Products.ORDER, key) == nil then
+			return `{key} 가 ORDER 에 없습니다`
+		end
+
+		if product.productId ~= 0 then
+			local other = seenIds[product.productId]
+			if other ~= nil then
+				return `{key} 와 {other} 의 productId 가 같습니다`
+			end
+			seenIds[product.productId] = key
+		end
+
+		if product.kind == "fixed" then
+			if #product.outcomes > 0 then
+				return `{key} 는 확정형인데 결과 목록이 있습니다`
+			end
+			if
+				product.ticketAmount < 0
+				or product.ticketAmount ~= math.floor(product.ticketAmount)
+			then
+				return `{key} 의 ticketAmount 가 잘못되었습니다`
+			end
+		elseif product.kind == "random" then
+			if #product.outcomes > 0 and not Products.isDrawReady(product.outcomes) then
+				return `{key} 의 결과 목록이 잘못되었습니다`
+			end
+		else
+			return `{key} 의 kind 가 잘못되었습니다`
+		end
+	end
+
+	for _, key in Products.ORDER do
+		if Products.DeveloperProducts[key] == nil then
+			return `ORDER 에 없는 상품이 있습니다: {key}`
+		end
+	end
+
+	local shard = Products.SHARD_DRAW
+	if shard.cost <= 0 or shard.cost ~= math.floor(shard.cost) then
+		return "SHARD_DRAW.cost 가 잘못되었습니다"
+	end
+	if #shard.outcomes > 0 and not Products.isDrawReady(shard.outcomes) then
+		return "SHARD_DRAW 의 결과 목록이 잘못되었습니다"
+	end
+
+	if Products.PITY_THRESHOLD < 1 or Products.PITY_TICKETS < 1 or Products.PITY_PER_MISS < 1 then
+		return "천장 포인트 설정이 잘못되었습니다"
+	end
+
+	return nil
+end
+
 return Products
 ]]></string>
           </Properties>
         </Item>
         <Item class="ModuleScript" referent="7">
+          <Properties>
+            <string name="Name">RaceConfig</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	RaceConfig — 추격 생존 경주 수치 (통합 기획서 4절).
+	계산은 Pure/RaceLogic 이 하고, 여기에는 숫자만 둔다.
+
+	표시:
+	  [확정]   승인된 기획. 개발자 승인 없이 바꾸지 않는다.
+	  [추천치] Claude 가 채운 초기값. 다른 값이 정해지면 바꾼다.
+	  [기술]   기획 수치가 아니라 구현에 필요한 값(검증 여유, 코스 모양 등).
+	  [미정]   결정 대기. 값이 없고 넣을 자리만 있다.
+]]
+
+local RaceConfig = {}
+
+-- [확정] 방해 없이 쉬지 않고 달렸을 때 잡히는 시간(초). 0~1강 20초 → 20강 90초, 그 사이는 일정하게.
+RaceConfig.MIN_TIME_SECONDS = 20
+RaceConfig.MAX_TIME_SECONDS = 90
+
+-- [추천치] 추격자 속도 = c0 × e^(CHASER_ACCEL × t). c0 는 아래 두 값에서 계산된다.
+RaceConfig.CHASER_ACCEL = 0.02
+-- [추천치] 출발할 때 추격자가 출발선보다 이만큼 뒤에 있다(칸).
+RaceConfig.HEAD_START = 30
+-- [추천치] 0~1강의 이동 속도 (로블록스 기본 걷기 속도)
+RaceConfig.BASE_SPEED = 16
+
+--[[
+	[확정] 보상 배율 m(L) (통합 기획서 4-3절)
+	  1구간 (L < tier2Start): tier1Base + tier1Span × (100 − 그 레벨의 성공 확률) / tier1Divisor
+	  2구간 (L ≥ tier2Start): tier2Base × tier2Growth ^ ((L − tier2Start) / tier2Span)
+]]
+RaceConfig.Multiplier = {
+	tier1Base = 2,
+	tier1Span = 3,
+	tier1Divisor = 85,
+	tier2Start = 10,
+	tier2Base = 5,
+	tier2Growth = 2,
+	tier2Span = 10,
+}
+
+-- [확정] "매칭"을 누르면 이 시간 안에 출발한다(초).
+RaceConfig.MATCH_WINDOW_SECONDS = 10
+-- [확정 P43, 추후 조절] 대기열이 이 인원이 되면 기다리지 않고 바로 출발 준비에 들어간다.
+RaceConfig.MATCH_FULL_COUNT = 20
+-- [기술] 출발선에 세운 뒤 출발 신호까지의 카운트다운(초). MATCH_WINDOW_SECONDS 안에 포함된다.
+-- (대기열은 10 − 3 = 7초에 닫히고, 출발선에서 3초를 센 뒤 달린다.)
+RaceConfig.LINEUP_SECONDS = 3
+
+--[[
+	[기술] 서버 거리 검증 (통합 기획서 4-5절).
+	서버는 매 순간 "허용 최대 속도 × 지난 시간 × SPEED_TOLERANCE + DISTANCE_SLACK" 까지만 거리를 인정한다.
+	그보다 앞에 있는 캐릭터(속도 조작)는 그 한계 위치에 있는 것으로 보고 추격자에게 잡힌다.
+]]
+RaceConfig.SPEED_TOLERANCE = 1.1
+RaceConfig.DISTANCE_SLACK = 6
+-- [기술] 이 거리 미만은 0 으로 본다. 출발선에 가만히 서 있을 때 생기는 미세한 흔들림을 보상하지 않기 위함.
+RaceConfig.DEAD_ZONE = 1
+
+-- [기술] 모두 탈락한 뒤 결과를 보여 주는 시간(초). 지나면 남아 있는 사람을 로비로 돌려보낸다.
+RaceConfig.RESULT_SECONDS = 8
+
+--[[
+	[기술] 코스 모양. 코스는 판마다 새로 만든다(장애물 위치가 매번 다르다).
+	길이 = max(minLength, 그 판 최고 레벨의 최대 거리 × lengthMargin + extraLength)
+	20강이 끼면 약 4,600칸이 된다(기획서: 20강 기준 4,000칸 이상).
+
+	장애물 세 가지: block(옆으로 피한다) · hurdle(뛰어넘는다) · gate(틈으로 지나간다).
+	어느 줄이든 반드시 지나갈 길이 있다.
+]]
+RaceConfig.Course = {
+	trackWidth = 48,
+	lengthMargin = 1.25,
+	extraLength = 150,
+	minLength = 500,
+
+	firstObstacleAt = 60, -- 출발선에서 첫 장애물까지
+	minSpacing = 50, -- 장애물 줄 사이 간격(칸)
+	maxSpacing = 90,
+	endMargin = 40, -- 코스 끝 이만큼 앞부터는 장애물을 두지 않는다
+
+	blockMinWidth = 8,
+	blockMaxWidth = 18,
+	gateGap = 16,
+
+	-- 장애물 종류가 뽑히는 비중 (합은 아무 값이어도 된다)
+	weightBlock = 5,
+	weightHurdle = 3,
+	weightGate = 2,
+
+	-- 출발선에 서는 자리
+	lineupWidth = 40,
+	lineupMaxSpacing = 4,
+}
+
+--[[
+	[미정] 아직 값이 없는 것. 서버(RaceService)에 넣을 자리만 만들어 두었다.
+	  D6  1~3위 보너스: 크기, 지급 최소 인원 → RaceService 의 rankBonusFor
+	  D16 특수 능력·도감 기념 업그레이드 → RaceService 의 allowedSpeedFor / rewardBonusFor
+	  D17 신규 유저 보호 (처음 몇 판 방해 금지) → 방해 능력이 생길 때 함께 만든다
+]]
+
+return RaceConfig
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="8">
           <Properties>
             <string name="Name">Weapons</string>
             <string name="Source"><![CDATA[--!strict
@@ -343,8 +640,87 @@ return Weapons
 ]]></string>
           </Properties>
         </Item>
+        <Item class="ModuleScript" referent="9">
+          <Properties>
+            <string name="Name">World</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	World — 로비와 경주 코스를 코드로 지을 때 쓰는 위치·크기 (전부 [기술] 값).
+
+	밸런스 수치가 아니다. 미술 에셋이 없어서 블록으로만 짓는다(통합 기획서 10-3절).
+	나중에 Studio 에서 직접 꾸민 로비로 바꾸면 이 파일의 LOBBY 부분은 필요 없어진다.
+
+	좌표: 로비 바닥 윗면이 y = 0. 경주 코스는 로비 앞(+Z)쪽에서 시작해 +Z 방향으로 달린다.
+	Roblox 타입(Vector3 등)을 쓰지 않고 숫자만 둔다(다른 Config 처럼 Studio 밖에서도 읽을 수 있게).
+]]
+
+local World = {}
+
+World.LOBBY = {
+	sizeX = 120,
+	sizeZ = 120,
+	floorThickness = 2,
+	wallHeight = 24, -- 보이지 않는 벽 (밖으로 떨어지지 않게)
+	spawnX = 0,
+	spawnZ = -20,
+	spawnSize = 14,
+	spawnScatter = 5, -- 로비로 돌려보낼 때 이 범위 안에 흩어 놓는다
+}
+
+--[[
+	트레드밀 발판. 수입(몇 초에 몇 골드)은 EconomyConfig.TREADMILL_TIERS 에 있다.
+	tierId 가 같은 발판은 같은 수입을 준다. 한 발판에 여러 명이 올라가도 된다.
+]]
+World.TREADMILL_PADS = {
+	{ tierId = "tier1", x = -44, z = -36 },
+	{ tierId = "tier1", x = -44, z = -12 },
+	{ tierId = "tier1", x = -44, z = 12 },
+	{ tierId = "tier1", x = -44, z = 36 },
+}
+World.TREADMILL_PAD = {
+	sizeX = 12,
+	sizeZ = 18,
+	height = 0.6, -- 발판 두께 (바닥 위로 올라온 높이)
+	reach = 12, -- 발판 위로 이 높이까지 "올라가 있다"로 본다 (점프 포함)
+}
+
+World.COURSE = {
+	startZ = 300, -- 출발선의 Z (로비는 Z = ±60 안쪽이다)
+	slotSpacing = 90, -- 동시에 열리는 경주끼리 옆으로 떨어진 거리
+	floorThickness = 2,
+	segmentLength = 200, -- 바닥을 이 길이로 끊어서 만든다
+	wallHeight = 18,
+	wallThickness = 2,
+	backExtra = 30, -- 추격자 출발 위치보다 뒤로 더 까는 바닥
+	markerEvery = 100, -- 이 간격마다 바닥에 거리 표시 줄
+	blockHeight = 9,
+	blockDepth = 4,
+	hurdleHeight = 3, -- 걸어서는 못 넘고 점프(기본 약 7칸)로 넘는 높이
+	hurdleDepth = 1.5,
+	gateHeight = 11,
+	gateDepth = 3,
+	chaserHeight = 40,
+	chaserDepth = 6,
+	spawnHeight = 3, -- 캐릭터를 놓을 때 바닥에서 띄우는 높이
+}
+
+-- 캐릭터끼리 부딪치지 않게 하는 충돌 그룹 이름
+World.CHARACTER_COLLISION_GROUP = "ForgeCharacters"
+
+-- Workspace 아래 폴더 이름 (클라이언트도 이 이름으로 찾는다)
+World.LOBBY_FOLDER = "Lobby"
+World.TREADMILL_FOLDER = "Treadmills"
+World.RACES_FOLDER = "Races"
+World.RACE_FOLDER_PREFIX = "Race_"
+World.CHASER_NAME = "Chaser"
+World.TREADMILL_TIER_ATTRIBUTE = "TreadmillTier"
+
+return World
+]]></string>
+          </Properties>
+        </Item>
       </Item>
-      <Item class="ModuleScript" referent="8">
+      <Item class="ModuleScript" referent="10">
         <Properties>
           <string name="Name">Locale</string>
           <string name="Source"><![CDATA[--!strict
@@ -444,10 +820,55 @@ Locale.Strings = {
 		["ui.drawNone"] = "더 뽑을 검이 없다. 전부 모았다.",
 		["ui.drawResult"] = "새 검이 나왔다: %s (%s)",
 
+		-- 로비 · 경주 · 트레드밀
+		["ui.race.match"] = "경주 매칭",
+		["ui.race.cancel"] = "대기 취소",
+		["ui.race.queue"] = "출발까지 %d초 · 대기 %d명",
+		["ui.race.info"] = "착용 검 +%d · 최대 거리 %s칸 · 최대 보상 %s 골드",
+		["ui.forge.hide"] = "대장간 접기",
+		["ui.forge.show"] = "대장간 열기",
+		["ui.treadmill.label"] = "트레드밀 · %d초마다 %s 골드",
+		["ui.treadmill.progress"] = "트레드밀 %d/%d초 · %s 골드",
+		["ui.treadmill.paid"] = "트레드밀 수입 +%s 골드",
+		["ui.race.go"] = "출발!",
+		["ui.race.distance"] = "거리 %s / %s칸",
+		["ui.race.distanceOnly"] = "거리 %s칸",
+		["ui.race.gap"] = "추격자와 %s칸",
+		["ui.race.caught"] = "잡혔다.",
+		["ui.race.result"] = "%d명 중 %d위 · %s칸 (최대 거리의 %s)",
+		["ui.race.reward"] = "보상 +%s 골드",
+		["ui.race.bonus"] = "순위 보너스 +%s 골드 (보상에 포함)",
+		["ui.race.spectating"] = "관전 중: %s (+%d)",
+		["ui.race.next"] = "다음 사람",
+		["ui.race.toLobby"] = "로비로",
+		["ui.race.finished"] = "모두 잡혔다. %d초 뒤 로비로 돌아간다.",
+		["ui.race.rankRow"] = "%d위  %s (+%d)  %s칸",
+		["ui.race.rewardFeed"] = "경주 보상 +%s 골드 (%s칸)",
+		["error.in_race"] = "경주가 끝난 뒤에 해라.",
+
 		["ui.shop"] = "상점",
 		["ui.shopTitle"] = "상점",
 		["ui.shopEmpty"] = "아직 상품이 등록되지 않았다.",
-		["shop.ticketPack"] = "방지권 %d 개",
+		["shop.ticketSingle"] = "방지권 %d개",
+		["shop.ticketBundle"] = "방지권 %d개 묶음",
+		["shop.ticketRandom"] = "방지권 뽑기 (확률형)",
+		["shop.sectionPaid"] = "방지권 상품 (Robux)",
+		["shop.sectionFree"] = "파편 뽑기 (Robux 를 쓰지 않는다)",
+		["shop.oddsTitle"] = "나올 수 있는 결과와 확률 (합계 100%%)",
+		["shop.outcomeTickets"] = "· 방지권 %d개  %s",
+		["shop.outcomeMiss"] = "· 꽝 (천장 포인트 +%d)",
+		["shop.outcomeMissPity"] = "· 꽝 (천장 포인트가 차서 방지권 %d개를 받는다)",
+		["shop.outcomeMissFree"] = "· 꽝",
+		["shop.pity"] = "천장 포인트 %d/%d. 꽝이 나올 때마다 %d점, %d점이 되면 바로 방지권 %d개를 받고 0점으로 돌아간다.",
+		["shop.shardDraw"] = "파편 %d개로 방지권 뽑기",
+		["shop.shardOwned"] = "가진 파편 %s개",
+		["shop.shardDrawWin"] = "파편 뽑기: 방지권 %d개가 나왔다.",
+		["shop.shardDrawMiss"] = "파편 뽑기: 꽝이다.",
+		["shop.granted"] = "방지권 %d개를 받았다.",
+		["shop.randomWin"] = "뽑기 결과: 방지권 %d개.",
+		["shop.randomMiss"] = "뽑기 결과: 꽝. 천장 포인트 %d/%d.",
+		["shop.randomPity"] = "뽑기 결과: 꽝. 천장 포인트가 차서 방지권 %d개를 받았다.",
+		["error.not_enough_shards"] = "파편이 모자란다.",
 		["shop.notice"] = "골드는 Robux 로 못 산다. 확률은 전부 공개한다.",
 		["error.not_available"] = "아직 준비되지 않은 상품이다.",
 
@@ -569,10 +990,54 @@ Locale.Strings = {
 		["ui.drawNone"] = "Nothing left to draw. You have them all.",
 		["ui.drawResult"] = "A new sword: %s (%s)",
 
+		["ui.race.match"] = "Race",
+		["ui.race.cancel"] = "Leave queue",
+		["ui.race.queue"] = "Starts in %ds · %d waiting",
+		["ui.race.info"] = "Equipped +%d · max distance %s · max reward %s gold",
+		["ui.forge.hide"] = "Hide forge",
+		["ui.forge.show"] = "Show forge",
+		["ui.treadmill.label"] = "Treadmill · every %ds, %s gold",
+		["ui.treadmill.progress"] = "Treadmill %d/%ds · %s gold",
+		["ui.treadmill.paid"] = "Treadmill income +%s gold",
+		["ui.race.go"] = "Go!",
+		["ui.race.distance"] = "Distance %s / %s",
+		["ui.race.distanceOnly"] = "Distance %s",
+		["ui.race.gap"] = "Chaser is %s behind",
+		["ui.race.caught"] = "Caught.",
+		["ui.race.result"] = "Racers %d · place #%d · %s studs (%s of max)",
+		["ui.race.reward"] = "Reward +%s gold",
+		["ui.race.bonus"] = "Rank bonus +%s gold (included)",
+		["ui.race.spectating"] = "Watching: %s (+%d)",
+		["ui.race.next"] = "Next racer",
+		["ui.race.toLobby"] = "To lobby",
+		["ui.race.finished"] = "Everyone is caught. Back to the lobby in %ds.",
+		["ui.race.rankRow"] = "#%d  %s (+%d)  %s studs",
+		["ui.race.rewardFeed"] = "Race reward +%s gold (%s studs)",
+		["error.in_race"] = "Wait until the race is over.",
+
 		["ui.shop"] = "Shop",
 		["ui.shopTitle"] = "Shop",
 		["ui.shopEmpty"] = "No items yet.",
-		["shop.ticketPack"] = "%d protection tickets",
+		["shop.ticketSingle"] = "Protection ticket ×%d",
+		["shop.ticketBundle"] = "Protection ticket bundle ×%d",
+		["shop.ticketRandom"] = "Ticket draw (random)",
+		["shop.sectionPaid"] = "Protection tickets (Robux)",
+		["shop.sectionFree"] = "Shard draw (no Robux)",
+		["shop.oddsTitle"] = "All outcomes and odds (total 100%%)",
+		["shop.outcomeTickets"] = "· %d tickets  %s",
+		["shop.outcomeMiss"] = "· Nothing (pity point +%d)",
+		["shop.outcomeMissPity"] = "· Nothing (pity is full, so you get %d ticket)",
+		["shop.outcomeMissFree"] = "· Nothing",
+		["shop.pity"] = "Pity points %d/%d. Each miss adds %d. At %d you get %d ticket at once and it resets to 0.",
+		["shop.shardDraw"] = "Draw a ticket for %d shards",
+		["shop.shardOwned"] = "You have %s shards",
+		["shop.shardDrawWin"] = "Shard draw: %d tickets.",
+		["shop.shardDrawMiss"] = "Shard draw: nothing.",
+		["shop.granted"] = "You received %d tickets.",
+		["shop.randomWin"] = "Draw result: %d tickets.",
+		["shop.randomMiss"] = "Draw result: nothing. Pity points %d/%d.",
+		["shop.randomPity"] = "Draw result: nothing. Pity was full, so you received %d ticket.",
+		["error.not_enough_shards"] = "Not enough shards.",
 		["shop.notice"] = "Gold is never sold for Robux. All odds are public.",
 		["error.not_available"] = "That item is not ready yet.",
 
@@ -653,11 +1118,11 @@ return Locale
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Folder" referent="9">
+      <Item class="Folder" referent="11">
         <Properties>
           <string name="Name">Pure</string>
         </Properties>
-        <Item class="ModuleScript" referent="10">
+        <Item class="ModuleScript" referent="12">
           <Properties>
             <string name="Name">DataMigration</string>
             <string name="Source"><![CDATA[--!strict
@@ -838,7 +1303,161 @@ return DataMigration
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="11">
+        <Item class="ModuleScript" referent="13">
+          <Properties>
+            <string name="Name">DrawLogic</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	DrawLogic — 방지권 뽑기의 순수 함수 (통합 기획서 3-4절, 7절).
+
+	두 가지 뽑기가 같은 함수를 쓴다.
+	  - 확률형 상품 (Robux): 꽝이면 천장 포인트 +1, 다 차면 방지권을 주고 0 으로 → resolvePaid
+	  - 파편 뽑기 (무과금): 천장 포인트 없음 → resolveFree
+
+	Roblox API 와 require 가 없다. 결과 목록과 천장 규칙은 인자로 받는다(Config/Products).
+	난수는 서버가 만든 [0, 1) 값을 넘겨받는다. 이 모듈은 난수를 만들지 않는다.
+
+	화면에 보여 주는 %는 Pure/SwordLogic.exactPercents(DrawLogic.weights(결과 목록), 자릿수) 로 만든다
+	(합이 정확히 100 이 된다). 실제 추첨은 반올림한 %가 아니라 원래 weight 로 한다.
+]]
+
+local DrawLogic = {}
+
+export type Outcome = {
+	tickets: number, -- 0 이면 꽝
+	weight: number,
+}
+
+export type FreeResult = {
+	index: number, -- 뽑힌 결과의 순번
+	tickets: number,
+}
+
+export type PaidResult = {
+	index: number,
+	rolledTickets: number, -- 뽑기 자체로 나온 방지권 수 (꽝이면 0)
+	isMiss: boolean,
+	pityTickets: number, -- 천장 포인트가 차서 받은 방지권 수 (없으면 0)
+	totalTickets: number, -- 실제로 지급할 방지권 수
+	pityAfter: number, -- 처리 후 천장 포인트
+}
+
+-- 결과 목록의 비중만 뽑아낸다 (% 계산에 넘기는 모양).
+function DrawLogic.weights(outcomes: { Outcome }): { number }
+	local list: { number } = {}
+	for index, outcome in outcomes do
+		list[index] = math.max(0, outcome.weight)
+	end
+	return list
+end
+
+--[[
+	뽑기 1회. unitRoll 은 [0, 1) 난수. 뽑을 것이 없으면 nil.
+	구간은 목록 순서대로 붙어 있다.
+]]
+function DrawLogic.pick(outcomes: { Outcome }, unitRoll: number): number?
+	local total = 0
+	for _, outcome in outcomes do
+		total += math.max(0, outcome.weight)
+	end
+
+	if #outcomes == 0 or total <= 0 then
+		return nil
+	end
+
+	local target = math.clamp(unitRoll, 0, 1) * total
+	local running = 0
+	local last = 0
+
+	for index, outcome in outcomes do
+		local weight = math.max(0, outcome.weight)
+		if weight > 0 then
+			running += weight
+			last = index
+			if target < running then
+				return index
+			end
+		end
+	end
+
+	return last
+end
+
+--[[
+	꽝 한 번을 천장 포인트에 반영한다.
+	반환: (처리 후 포인트, 이번에 받는 방지권 수)
+	포인트가 threshold 에 닿으면 그 자리에서 방지권을 주고 0 으로 돌아간다.
+]]
+function DrawLogic.applyMiss(
+	pityPoints: number,
+	perMiss: number,
+	threshold: number,
+	pityTickets: number
+): (number, number)
+	local points = math.max(0, math.floor(pityPoints)) + perMiss
+
+	if threshold > 0 and points >= threshold then
+		return 0, pityTickets
+	end
+	return points, 0
+end
+
+-- 다음 꽝에서 천장이 차는 상태인지 (상점이 꽝 줄의 설명을 바꿔 보여 주는 데 쓴다)
+function DrawLogic.isPityNext(pityPoints: number, perMiss: number, threshold: number): boolean
+	return threshold > 0 and math.max(0, math.floor(pityPoints)) + perMiss >= threshold
+end
+
+-- 파편 뽑기 1회 (천장 포인트 없음)
+function DrawLogic.resolveFree(outcomes: { Outcome }, unitRoll: number): FreeResult?
+	local index = DrawLogic.pick(outcomes, unitRoll)
+	if index == nil then
+		return nil
+	end
+
+	return {
+		index = index,
+		tickets = math.max(0, math.floor(outcomes[index].tickets)),
+	}
+end
+
+-- 확률형 상품 1회 (꽝이면 천장 포인트)
+function DrawLogic.resolvePaid(
+	outcomes: { Outcome },
+	unitRoll: number,
+	pityPoints: number,
+	perMiss: number,
+	threshold: number,
+	pityTickets: number
+): PaidResult?
+	local index = DrawLogic.pick(outcomes, unitRoll)
+	if index == nil then
+		return nil
+	end
+
+	local rolled = math.max(0, math.floor(outcomes[index].tickets))
+	local isMiss = rolled == 0
+
+	local pityAfter = math.max(0, math.floor(pityPoints))
+	local bonus = 0
+	if isMiss then
+		pityAfter, bonus = DrawLogic.applyMiss(pityPoints, perMiss, threshold, pityTickets)
+	end
+
+	return {
+		index = index,
+		rolledTickets = rolled,
+		isMiss = isMiss,
+		pityTickets = bonus,
+		totalTickets = rolled + bonus,
+		pityAfter = pityAfter,
+	}
+end
+
+return DrawLogic
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="14">
           <Properties>
             <string name="Name">EnhanceLogic</string>
             <string name="Source"><![CDATA[--!strict
@@ -999,7 +1618,7 @@ return EnhanceLogic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="12">
+        <Item class="ModuleScript" referent="15">
           <Properties>
             <string name="Name">Format</string>
             <string name="Source"><![CDATA[--!strict
@@ -1067,7 +1686,326 @@ return Format
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="13">
+        <Item class="ModuleScript" referent="16">
+          <Properties>
+            <string name="Name">RaceLogic</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	RaceLogic — 추격 생존 경주의 순수 함수 (통합 기획서 4절).
+
+	Roblox API 와 require 가 없다. 수치는 전부 인자로 받는다(Config/RaceConfig).
+	서버(RaceService)가 실제 판정에 쓰고, 클라이언트는 같은 함수로 "최대 거리·최대 보상"을 보여 준다.
+
+	기호 (기획서와 같다):
+	  T(L)    그 레벨이 방해 없이 쉬지 않고 달렸을 때 잡히는 시간
+	  C(t)    추격자가 t 초 동안 움직인 거리 = c0 / k × (e^(k·t) − 1)
+	  H       출발할 때 추격자가 뒤처진 거리
+	  Dmax(L) = C(T(L)) − H   그 레벨의 최대 거리
+	  v(L)    = Dmax(L) / T(L) 그 레벨의 이동 속도
+	위치는 전부 "출발선에서 앞쪽으로 몇 칸"이다. 추격자는 −H 에서 출발한다.
+]]
+
+local RaceLogic = {}
+
+export type Curve = {
+	minTime: number, -- T(0) = T(1)
+	maxTime: number, -- T(maxLevel)
+	maxLevel: number,
+	accel: number, -- k
+	headStart: number, -- H
+	baseSpeed: number, -- v(1)
+}
+
+export type MultiplierConfig = {
+	tier1Base: number,
+	tier1Span: number,
+	tier1Divisor: number,
+	tier2Start: number,
+	tier2Base: number,
+	tier2Growth: number,
+	tier2Span: number,
+}
+
+export type CourseConfig = {
+	trackWidth: number,
+	lengthMargin: number,
+	extraLength: number,
+	minLength: number,
+	firstObstacleAt: number,
+	minSpacing: number,
+	maxSpacing: number,
+	endMargin: number,
+	blockMinWidth: number,
+	blockMaxWidth: number,
+	gateGap: number,
+	weightBlock: number,
+	weightHurdle: number,
+	weightGate: number,
+	lineupWidth: number,
+	lineupMaxSpacing: number,
+}
+
+--[[
+	장애물 한 줄.
+	  block   폭 width 의 기둥. x 는 기둥의 중심. 옆으로 피한다.
+	  hurdle  트랙 전체를 가로지르는 낮은 턱. 뛰어넘는다. (x = 0, width = 트랙 폭)
+	  gate    트랙을 막는 벽에 폭 width 의 틈. x 는 틈의 중심.
+	x 는 트랙 중심 기준 좌우 위치, z 는 출발선에서 앞쪽 거리.
+]]
+export type Obstacle = {
+	kind: "block" | "hurdle" | "gate",
+	z: number,
+	x: number,
+	width: number,
+}
+
+--------------------------------------------------------------------------------
+-- 시간 · 거리 · 속도
+--------------------------------------------------------------------------------
+
+-- T(L) = minTime + (maxTime − minTime) × (max(L, 1) − 1) / (maxLevel − 1)
+function RaceLogic.baseTime(level: number, curve: Curve): number
+	if curve.maxLevel <= 1 then
+		return curve.minTime
+	end
+
+	local effective = math.clamp(level, 1, curve.maxLevel)
+	return curve.minTime + (curve.maxTime - curve.minTime) * (effective - 1) / (curve.maxLevel - 1)
+end
+
+-- c0: 1강(속도 baseSpeed)이 정확히 minTime 초에 잡히도록 맞춘 추격자의 처음 속도
+function RaceLogic.chaserStartSpeed(curve: Curve): number
+	local k = curve.accel
+	local t1 = curve.minTime
+	return (curve.baseSpeed * t1 + curve.headStart) * k / (math.exp(k * t1) - 1)
+end
+
+-- C(t): 추격자가 출발 후 elapsed 초 동안 움직인 거리
+function RaceLogic.chaserTravel(elapsed: number, curve: Curve): number
+	local t = math.max(0, elapsed)
+	return RaceLogic.chaserStartSpeed(curve) / curve.accel * (math.exp(curve.accel * t) - 1)
+end
+
+-- 추격자의 지금 속도 (화면 표시용)
+function RaceLogic.chaserSpeed(elapsed: number, curve: Curve): number
+	return RaceLogic.chaserStartSpeed(curve) * math.exp(curve.accel * math.max(0, elapsed))
+end
+
+-- 추격자 앞면의 위치 (출발선 기준). 출발 순간 −H.
+function RaceLogic.chaserFront(elapsed: number, curve: Curve): number
+	return RaceLogic.chaserTravel(elapsed, curve) - curve.headStart
+end
+
+-- Dmax(L)
+function RaceLogic.maxDistance(level: number, curve: Curve): number
+	return RaceLogic.chaserTravel(RaceLogic.baseTime(level, curve), curve) - curve.headStart
+end
+
+-- v(L). 모든 검의 기본 능력치는 같으므로 착용 검 레벨로만 정해진다.
+function RaceLogic.runSpeed(level: number, curve: Curve): number
+	return RaceLogic.maxDistance(level, curve) / RaceLogic.baseTime(level, curve)
+end
+
+--------------------------------------------------------------------------------
+-- 보상
+--------------------------------------------------------------------------------
+
+--[[
+	보상 배율 m(L).
+	successPercent 는 그 레벨의 "표에 적힌" 강화 성공 확률이다(이벤트 버프를 넣지 않은 값).
+	2구간에서는 쓰지 않으므로 아무 값이나 넘겨도 된다.
+]]
+function RaceLogic.rewardMultiplier(
+	level: number,
+	successPercent: number,
+	config: MultiplierConfig
+): number
+	if level >= config.tier2Start then
+		return config.tier2Base
+			* config.tier2Growth ^ ((level - config.tier2Start) / config.tier2Span)
+	end
+	return config.tier1Base + config.tier1Span * (100 - successPercent) / config.tier1Divisor
+end
+
+--[[
+	보상 = 그 레벨의 강화 비용(검 1개 기준) × 배율 × min(1, 거리 / 최대 거리). 정수 골드로 반올림.
+	costAtLevel 에는 검 수 할증을 넣지 않은 값을 넘긴다(기획서 4-3: 보상에는 할증이 없다).
+	거리가 0 이면 보상도 0 이다.
+]]
+function RaceLogic.reward(
+	costAtLevel: number,
+	multiplier: number,
+	distance: number,
+	maxDistance: number
+): number
+	if maxDistance <= 0 or distance <= 0 or distance ~= distance then
+		return 0
+	end
+
+	local ratio = math.min(1, distance / maxDistance)
+	return math.floor(costAtLevel * multiplier * ratio + 0.5)
+end
+
+--------------------------------------------------------------------------------
+-- 서버 거리 검증
+--------------------------------------------------------------------------------
+
+--[[
+	서버가 인정하는 위치.
+	observed 는 서버가 본 캐릭터의 위치(출발선 기준)다. 캐릭터 이동은 플레이어 기기가 계산하므로
+	속도를 조작하면 이 값이 터무니없이 커질 수 있다. 그래서
+	    허용 최대 속도 × 지난 시간 × tolerance + slack
+	보다 앞은 인정하지 않는다. 뒤로 가는 것은 그대로 인정한다(추격자에게 잡히는 판정에 쓴다).
+	값이 숫자가 아니면(NaN) 가장 뒤에 있는 것으로 본다.
+]]
+function RaceLogic.effectivePosition(
+	observed: number,
+	elapsed: number,
+	allowedSpeed: number,
+	tolerance: number,
+	slack: number
+): number
+	if observed ~= observed then
+		return -math.huge
+	end
+
+	local cap = math.max(0, elapsed) * math.max(0, allowedSpeed) * tolerance + slack
+	return math.min(observed, cap)
+end
+
+-- 보상에 쓰는 거리. deadZone 미만은 0 (가만히 서 있으면 0 이어야 한다).
+function RaceLogic.creditedDistance(bestPosition: number, deadZone: number): number
+	if bestPosition ~= bestPosition or bestPosition < deadZone then
+		return 0
+	end
+	return bestPosition
+end
+
+--------------------------------------------------------------------------------
+-- 매칭
+--------------------------------------------------------------------------------
+
+--[[
+	대기열을 닫고 출발선에 세울 때인지.
+	  - 대기 인원이 fullCount 이상이면 바로
+	  - 아니면 첫 사람이 누른 뒤 (window − lineup) 초가 지났을 때
+	    (출발선 카운트다운 lineup 초까지 더해 "누른 뒤 window 초 안에 출발"이 된다)
+]]
+function RaceLogic.shouldDepart(
+	queueCount: number,
+	waited: number,
+	window: number,
+	lineup: number,
+	fullCount: number
+): boolean
+	if queueCount <= 0 then
+		return false
+	end
+	if queueCount >= fullCount then
+		return true
+	end
+	return waited >= window - lineup
+end
+
+-- 출발 신호까지 남은 시간(초). 화면 표시용.
+function RaceLogic.secondsUntilStart(waited: number, window: number): number
+	return math.max(0, window - waited)
+end
+
+--[[
+	출발선에 설 자리(트랙 중심 기준 좌우 위치). 모두 같은 줄(출발선 위)에 선다.
+	간격은 maxSpacing 을 넘지 않고, 사람이 많으면 usableWidth 안에 들어가도록 좁힌다.
+]]
+function RaceLogic.lineupOffsets(count: number, usableWidth: number, maxSpacing: number): { number }
+	local offsets: { number } = {}
+	if count <= 0 then
+		return offsets
+	end
+	if count == 1 then
+		return { 0 }
+	end
+
+	local spacing = math.min(maxSpacing, usableWidth / (count - 1))
+	local first = -spacing * (count - 1) / 2
+
+	for index = 1, count do
+		offsets[index] = first + spacing * (index - 1)
+	end
+	return offsets
+end
+
+--------------------------------------------------------------------------------
+-- 코스
+--------------------------------------------------------------------------------
+
+-- 그 판에서 가장 멀리 갈 수 있는 사람의 최대 거리로 코스 길이를 정한다.
+function RaceLogic.courseLength(topMaxDistance: number, config: CourseConfig): number
+	local wanted = math.ceil(topMaxDistance * config.lengthMargin + config.extraLength)
+	return math.max(config.minLength, wanted)
+end
+
+--[[
+	장애물 줄을 만든다. nextNumber 는 [0, 1) 난수를 주는 함수(서버가 Random 으로 만들어 넘긴다).
+	같은 난수 순서를 넣으면 같은 코스가 나온다 → 테스트할 수 있다.
+	z 오름차순으로 돌려준다.
+]]
+function RaceLogic.generateObstacles(
+	length: number,
+	config: CourseConfig,
+	nextNumber: () -> number
+): { Obstacle }
+	local obstacles: { Obstacle } = {}
+	local half = config.trackWidth / 2
+	local limit = length - config.endMargin
+	local totalWeight = config.weightBlock + config.weightHurdle + config.weightGate
+
+	local function unit(): number
+		return math.clamp(nextNumber(), 0, 0.999999)
+	end
+
+	local z = config.firstObstacleAt
+
+	while z < limit do
+		local pick = unit() * totalWeight
+
+		if totalWeight <= 0 or pick < config.weightBlock then
+			local width = config.blockMinWidth
+				+ (config.blockMaxWidth - config.blockMinWidth) * unit()
+			local range = half - width / 2 -- 중심이 움직일 수 있는 범위
+			table.insert(obstacles, {
+				kind = "block" :: "block",
+				z = z,
+				x = (unit() * 2 - 1) * range,
+				width = width,
+			})
+		elseif pick < config.weightBlock + config.weightHurdle then
+			table.insert(obstacles, {
+				kind = "hurdle" :: "hurdle",
+				z = z,
+				x = 0,
+				width = config.trackWidth,
+			})
+		else
+			local range = half - config.gateGap / 2
+			table.insert(obstacles, {
+				kind = "gate" :: "gate",
+				z = z,
+				x = (unit() * 2 - 1) * range,
+				width = config.gateGap,
+			})
+		end
+
+		z += config.minSpacing + (config.maxSpacing - config.minSpacing) * unit()
+	end
+
+	return obstacles
+end
+
+return RaceLogic
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="17">
           <Properties>
             <string name="Name">SwordLogic</string>
             <string name="Source"><![CDATA[--!strict
@@ -1262,8 +2200,61 @@ return SwordLogic
 ]]></string>
           </Properties>
         </Item>
+        <Item class="ModuleScript" referent="18">
+          <Properties>
+            <string name="Name">TreadmillLogic</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	TreadmillLogic — 로비 트레드밀의 순수 함수 (통합 기획서 6절).
+	Roblox API 와 require 가 없다.
+]]
+
+local TreadmillLogic = {}
+
+-- 발판 하나의 자리. 좌표는 발판 중심, topY 는 발판 윗면의 높이.
+export type Pad = {
+	x: number,
+	z: number,
+	sizeX: number,
+	sizeZ: number,
+	topY: number,
+	reach: number, -- 윗면에서 이 높이까지 "올라가 있다"로 본다
+}
+
+--[[
+	발판 위에 있던 시간을 더한다.
+	반환: (남은 진행 시간, 이번에 지급할 횟수)
+	interval 초를 채울 때마다 1회 지급이다. 한 번에 여러 번 채웠으면 그만큼 준다.
+]]
+function TreadmillLogic.advance(progress: number, dt: number, interval: number): (number, number)
+	if interval <= 0 then
+		return 0, 0
+	end
+
+	local total = math.max(0, progress) + math.max(0, dt)
+	local payouts = math.floor(total / interval + 1e-9)
+	local rest = math.max(0, total - payouts * interval)
+
+	return rest, payouts
+end
+
+-- 위치 (px, py, pz) 가 발판 위인지. py 는 캐릭터 중심의 높이.
+function TreadmillLogic.isOnPad(px: number, py: number, pz: number, pad: Pad): boolean
+	if math.abs(px - pad.x) > pad.sizeX / 2 then
+		return false
+	end
+	if math.abs(pz - pad.z) > pad.sizeZ / 2 then
+		return false
+	end
+	return py >= pad.topY and py <= pad.topY + pad.reach
+end
+
+return TreadmillLogic
+]]></string>
+          </Properties>
+        </Item>
       </Item>
-      <Item class="ModuleScript" referent="14">
+      <Item class="ModuleScript" referent="19">
         <Properties>
           <string name="Name">Remotes</string>
           <string name="Source"><![CDATA[--!strict
@@ -1288,9 +2279,13 @@ Remotes.Functions = {
 	GetState = "GetState", -- 접속 직후 현재 데이터 + 확률 조회 (복제 이벤트를 놓쳤을 때의 보정)
 	GetOdds = "GetOdds", -- 착용 검 기준 최종 확률 조회
 	GetLeaderboard = "GetLeaderboard", -- 랭킹 상위 목록
-	GetShopItems = "GetShopItems", -- 상점 목록 조회
+	GetShopItems = "GetShopItems", -- 상점 목록 조회 → Types.ShopState
 	PromptPurchase = "PromptPurchase", -- 구매창 띄우기 요청
+	ShardDraw = "ShardDraw", -- 파편으로 방지권 뽑기 1회 → Types.ShardDrawResponse
 	SetSetting = "SetSetting", -- 사운드/언어 설정 변경
+	JoinRace = "JoinRace", -- 경주 매칭 대기열에 들어가기
+	LeaveRaceQueue = "LeaveRaceQueue", -- 매칭 대기 취소
+	ReturnToLobby = "ReturnToLobby", -- 탈락 후 관전을 끝내고 로비로
 }
 
 -- RemoteEvent: 서버가 밀어 주는 것 (클라이언트→서버 방향은 원칙적으로 쓰지 않음)
@@ -1298,6 +2293,8 @@ Remotes.Events = {
 	DataChanged = "DataChanged", -- 프로필 변경분 복제
 	FeedMessage = "FeedMessage", -- 결과 피드 한 줄
 	LiveOpsChanged = "LiveOpsChanged", -- 이벤트/점검 상태 변경
+	RaceUpdate = "RaceUpdate", -- 경주 진행 알림 (Types.RaceUpdate)
+	TreadmillUpdate = "TreadmillUpdate", -- 트레드밀 진행 상태 (Types.TreadmillUpdate)
 }
 
 -- 서버 전용: 리모트 폴더와 인스턴스를 생성한다.
@@ -1336,7 +2333,7 @@ return Remotes
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="15">
+      <Item class="ModuleScript" referent="20">
         <Properties>
           <string name="Name">Types</string>
           <string name="Source"><![CDATA[--!strict
@@ -1402,7 +2399,7 @@ export type PlayerData = {
 	swords: { [string]: SwordState }, -- 검 id → 상태. 같은 검을 두 개 가질 수 없다
 	equippedId: string, -- 착용 중인 검의 id (반드시 swords 에 있다)
 	swordCapacity: number, -- 소지 상한 (골드로 1칸씩 산다)
-	pityPoints: number, -- 방지권 확률형 상품의 천장 포인트 (상품은 아직 없다)
+	pityPoints: number, -- 방지권 확률형 상품의 천장 포인트 (꽝 1점, 3점이면 방지권 1개 후 0)
 	weapon: LegacyWeaponState?, -- 사용 안 함 (v3 까지의 무기. v4 에서 swords 로 옮겼다)
 	protectTickets: number, -- 방지권
 	stats: PlayerStats,
@@ -1488,11 +2485,121 @@ export type LeaderboardEntry = {
 	value: number,
 }
 
+--------------------------------------------------------------------------------
+-- 추격 생존 경주 (통합 기획서 4절)
+--------------------------------------------------------------------------------
+
+-- 경주에 함께 나간 사람 한 명 (다른 참가자에게 보여 주는 정보)
+export type RaceEntrant = {
+	userId: number,
+	name: string,
+	level: number, -- 출발할 때의 착용 검 레벨
+}
+
+-- 최종 순위표의 한 줄
+export type RaceRankingRow = {
+	rank: number,
+	userId: number,
+	name: string,
+	level: number,
+	distance: number, -- 서버가 인정한 거리(칸, 내림)
+}
+
+--[[
+	서버가 RaceUpdate 이벤트로 보내는 알림. kind 로 구분한다.
+	여기 있는 거리·보상·순위는 전부 서버가 계산한 값이다. 클라이언트는 표시만 한다.
+
+	  queue      대기열 상태. queued=false 면 대기열에서 빠졌다는 뜻
+	  lineup     출발선에 섰다. countdown 초 뒤에 출발
+	  start      출발
+	  eliminated 누군가(나 포함) 탈락했다
+	  result     내 결과 (탈락한 순간 보상이 이미 지급됐다)
+	  finished   모두 탈락해 판이 끝났다. returnIn 초 뒤 로비로 돌아간다
+	  lobby      로비로 돌아왔다
+]]
+export type RaceUpdate = {
+	kind: string,
+	raceId: number?,
+
+	-- queue
+	queued: boolean?,
+	count: number?, -- 대기 인원
+	secondsLeft: number?, -- 출발 신호까지 남은 시간(초)
+
+	-- lineup
+	countdown: number?,
+	originX: number?, -- 코스 출발선의 위치 (화면 표시용)
+	originZ: number?,
+	level: number?,
+	speed: number?,
+	maxDistance: number?,
+	entrants: { RaceEntrant }?,
+
+	-- eliminated / result
+	userId: number?,
+	rank: number?,
+	distance: number?,
+	reward: number?,
+	bonus: number?, -- 1~3위 보너스 (미정 D6, 지금은 항상 0)
+	racerCount: number?,
+
+	-- finished
+	ranking: { RaceRankingRow }?,
+	returnIn: number?,
+}
+
+-- 서버가 TreadmillUpdate 이벤트로 보내는 트레드밀 상태
+export type TreadmillUpdate = {
+	onPad: boolean,
+	progress: number, -- 이번 지급까지 채운 시간(초)
+	interval: number, -- 몇 초마다
+	gold: number, -- 몇 골드
+	paid: number, -- 방금 지급된 골드 (없으면 0)
+}
+
+--------------------------------------------------------------------------------
+-- 상점 (통합 기획서 7절)
+--------------------------------------------------------------------------------
+
+-- 뽑기 결과 한 줄. percent 는 화면에 보여 주는 값이며 한 목록의 합이 정확히 100 이다.
+export type ShopOutcome = {
+	tickets: number, -- 0 이면 꽝
+	percent: number,
+}
+
 -- 상점에 보여 줄 항목 (클라이언트는 상품 ID 를 알 필요가 없다)
 export type ShopItem = {
 	key: string,
-	ticketAmount: number,
+	kind: string, -- "fixed" | "random"
+	ticketAmount: number, -- fixed 일 때 받는 방지권 수
+	outcomes: { ShopOutcome }, -- random 일 때 모든 결과와 확률
 }
+
+export type ShopShardDraw = {
+	cost: number, -- 1회에 드는 파편
+	outcomes: { ShopOutcome },
+}
+
+--[[
+	상점 화면에 필요한 것 전부. 아직 등록되지 않았거나 내용이 비어 있는 상품은 들어 있지 않다.
+	유료 확률형이 제한된 유저(PolicyService)에게는 확률형 상품이 들어 있지 않다.
+	천장 포인트의 현재 값은 복제받은 PlayerData.pityPoints 를 쓴다.
+]]
+export type ShopState = {
+	items: { ShopItem },
+	pityPerMiss: number,
+	pityThreshold: number,
+	pityTickets: number,
+	shardDraw: ShopShardDraw?, -- 확률이 아직 없으면 nil
+}
+
+export type ShardDrawSuccess = {
+	ok: true,
+	tickets: number, -- 이번에 얻은 방지권 (0 이면 꽝)
+	shards: number, -- 남은 파편
+}
+
+export type ShardDrawResponse = ShardDrawSuccess | Failure
 
 return Types
 ]]></string>
@@ -1500,11 +2607,11 @@ return Types
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="16">
+  <Item class="ServerScriptService" referent="21">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Script" referent="17">
+    <Item class="Script" referent="22">
       <Properties>
         <string name="Name">Server</string>
         <token name="RunContext">0</token>
@@ -1532,6 +2639,7 @@ type Service = {
 
 -- 의존 순서대로 나열한다. 여기 없는 모듈은 생명주기 없는 유틸로 간주하고 건너뛴다.
 local SERVICE_ORDER = {
+	"WorldService", -- 로비 바닥이 가장 먼저 있어야 한다
 	"DataService",
 	"AnalyticsService",
 	"LiveOpsService",
@@ -1539,6 +2647,8 @@ local SERVICE_ORDER = {
 	"CodexService",
 	"EnhanceService",
 	"SwordService",
+	"TreadmillService",
+	"RaceService",
 	"ChatCommandService",
 	"ShopService",
 	"LeaderboardService",
@@ -1592,11 +2702,11 @@ runStage("Start", services)
 print(`[Bootstrap] 서비스 {#services}개 시작 완료`)
 ]]></string>
       </Properties>
-      <Item class="Folder" referent="18">
+      <Item class="Folder" referent="23">
         <Properties>
           <string name="Name">services</string>
         </Properties>
-        <Item class="ModuleScript" referent="19">
+        <Item class="ModuleScript" referent="24">
           <Properties>
             <string name="Name">AdminService</string>
             <string name="Source"><![CDATA[--!strict
@@ -2089,7 +3199,7 @@ return AdminService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="20">
+        <Item class="ModuleScript" referent="25">
           <Properties>
             <string name="Name">AnalyticsService</string>
             <string name="Source"><![CDATA[--!strict
@@ -2152,7 +3262,8 @@ function AnalyticsService.logCurrency(
 		balanceAfter = balanceAfter,
 	})
 
-	if currency == "gold" and amount > 0 then
+	-- 서버가 계산한 큰 보상(경주)은 이상 탐지에서 뺀다. 넣으면 정상 유저마다 경고가 울린다.
+	if currency == "gold" and amount > 0 and not EconomyConfig.ANOMALY_EXEMPT_REASONS[reason] then
 		AnalyticsService.trackGoldGain(player, amount)
 	end
 end
@@ -2230,7 +3341,7 @@ return AnalyticsService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="21">
+        <Item class="ModuleScript" referent="26">
           <Properties>
             <string name="Name">ChatCommandService</string>
             <string name="Source"><![CDATA[--!strict
@@ -2468,7 +3579,7 @@ return ChatCommandService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="22">
+        <Item class="ModuleScript" referent="27">
           <Properties>
             <string name="Name">CodexService</string>
             <string name="Source"><![CDATA[--!strict
@@ -2557,7 +3668,297 @@ return CodexService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="23">
+        <Item class="ModuleScript" referent="28">
+          <Properties>
+            <string name="Name">CourseBuilder</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	CourseBuilder — 경주 코스 한 판을 블록으로 짓는 유틸 (통합 기획서 4-1절 5번).
+
+	생명주기(Init/Start)가 없어서 부트스트랩 순서 목록에 넣지 않는다. RaceService 만 쓴다.
+
+	무엇을 어디에 놓을지(장애물 종류·위치)는 Pure/RaceLogic.generateObstacles 가 정하고,
+	여기서는 그 목록을 받아 파트로 만들기만 한다. 크기·색은 Config/World 의 COURSE 값이다.
+
+	좌표: origin 이 출발선 가운데의 바닥 윗면이다. 코스는 +Z 방향으로 뻗는다.
+	추격자는 서버가 매 프레임 옮기는 큰 벽이다. 닿아서 잡는 게 아니라, 서버가 위치를 비교해 잡는다
+	(그래서 추격자 파트는 충돌이 꺼져 있다).
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local World = require(Shared:WaitForChild("Config"):WaitForChild("World"))
+local RaceLogic = require(Shared:WaitForChild("Pure"):WaitForChild("RaceLogic"))
+
+local CourseBuilder = {}
+
+export type Built = {
+	folder: Folder,
+	chaser: Part,
+	origin: Vector3,
+	length: number,
+	trackWidth: number,
+}
+
+local COLOR_FLOOR_A = Color3.fromRGB(70, 66, 76)
+local COLOR_FLOOR_B = Color3.fromRGB(58, 54, 64)
+local COLOR_WALL = Color3.fromRGB(120, 150, 190)
+local COLOR_START = Color3.fromRGB(240, 236, 230)
+local COLOR_MARKER = Color3.fromRGB(226, 142, 58)
+local COLOR_BLOCK = Color3.fromRGB(150, 84, 62)
+local COLOR_HURDLE = Color3.fromRGB(230, 200, 80)
+local COLOR_GATE = Color3.fromRGB(128, 96, 170)
+local COLOR_CHASER = Color3.fromRGB(255, 60, 40)
+
+local function makePart(
+	parent: Instance,
+	name: string,
+	size: Vector3,
+	position: Vector3,
+	color: Color3
+): Part
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Anchored = true
+	part.CanTouch = false
+	part.Size = size
+	part.Position = position
+	part.Color = color
+	part.Material = Enum.Material.SmoothPlastic
+	part.Parent = parent
+	return part
+end
+
+-- 바닥과 양옆 벽을 zFrom ~ zTo 구간에 놓는다.
+local function buildSegment(
+	parent: Instance,
+	origin: Vector3,
+	trackWidth: number,
+	zFrom: number,
+	zTo: number,
+	index: number
+)
+	local course = World.COURSE
+	local length = zTo - zFrom
+	local centerZ = origin.Z + (zFrom + zTo) / 2
+
+	makePart(
+		parent,
+		`Floor{index}`,
+		Vector3.new(trackWidth, course.floorThickness, length),
+		Vector3.new(origin.X, origin.Y - course.floorThickness / 2, centerZ),
+		if index % 2 == 0 then COLOR_FLOOR_A else COLOR_FLOOR_B
+	)
+
+	for side = -1, 1, 2 do
+		local wall = makePart(
+			parent,
+			`Wall{index}{if side < 0 then "L" else "R"}`,
+			Vector3.new(course.wallThickness, course.wallHeight, length),
+			Vector3.new(
+				origin.X + side * (trackWidth / 2 + course.wallThickness / 2),
+				origin.Y + course.wallHeight / 2,
+				centerZ
+			),
+			COLOR_WALL
+		)
+		wall.Transparency = 0.7
+		wall.CastShadow = false
+	end
+end
+
+-- 바닥에 붙은 얇은 줄 (출발선, 거리 표시). 밟아도 걸리지 않는다.
+local function buildStripe(
+	parent: Instance,
+	origin: Vector3,
+	trackWidth: number,
+	z: number,
+	name: string,
+	color: Color3,
+	depth: number
+)
+	local stripe = makePart(
+		parent,
+		name,
+		Vector3.new(trackWidth, 0.2, depth),
+		Vector3.new(origin.X, origin.Y + 0.1, origin.Z + z),
+		color
+	)
+	stripe.CanCollide = false
+	stripe.CastShadow = false
+	stripe.Material = Enum.Material.Neon
+end
+
+local function buildObstacle(
+	parent: Instance,
+	origin: Vector3,
+	trackWidth: number,
+	obstacle: RaceLogic.Obstacle,
+	index: number
+)
+	local course = World.COURSE
+	local z = origin.Z + obstacle.z
+
+	if obstacle.kind == "block" then
+		makePart(
+			parent,
+			`Block{index}`,
+			Vector3.new(obstacle.width, course.blockHeight, course.blockDepth),
+			Vector3.new(origin.X + obstacle.x, origin.Y + course.blockHeight / 2, z),
+			COLOR_BLOCK
+		)
+	elseif obstacle.kind == "hurdle" then
+		makePart(
+			parent,
+			`Hurdle{index}`,
+			Vector3.new(obstacle.width, course.hurdleHeight, course.hurdleDepth),
+			Vector3.new(origin.X + obstacle.x, origin.Y + course.hurdleHeight / 2, z),
+			COLOR_HURDLE
+		)
+	else
+		-- gate: 틈의 왼쪽과 오른쪽을 각각 벽으로 막는다.
+		local half = trackWidth / 2
+		local gapLeft = obstacle.x - obstacle.width / 2
+		local gapRight = obstacle.x + obstacle.width / 2
+
+		local leftWidth = gapLeft + half
+		if leftWidth > 0.5 then
+			makePart(
+				parent,
+				`Gate{index}L`,
+				Vector3.new(leftWidth, course.gateHeight, course.gateDepth),
+				Vector3.new(origin.X + (-half + gapLeft) / 2, origin.Y + course.gateHeight / 2, z),
+				COLOR_GATE
+			)
+		end
+
+		local rightWidth = half - gapRight
+		if rightWidth > 0.5 then
+			makePart(
+				parent,
+				`Gate{index}R`,
+				Vector3.new(rightWidth, course.gateHeight, course.gateDepth),
+				Vector3.new(origin.X + (gapRight + half) / 2, origin.Y + course.gateHeight / 2, z),
+				COLOR_GATE
+			)
+		end
+	end
+end
+
+--[[
+	코스 한 판을 짓는다.
+	headStart: 출발할 때 추격자가 출발선보다 뒤에 있는 거리 (그 뒤쪽까지 바닥을 깐다).
+]]
+function CourseBuilder.build(
+	parent: Instance,
+	raceId: number,
+	origin: Vector3,
+	length: number,
+	headStart: number,
+	trackWidth: number,
+	obstacles: { RaceLogic.Obstacle }
+): Built
+	local course = World.COURSE
+
+	local folder = Instance.new("Folder")
+	folder.Name = `{World.RACE_FOLDER_PREFIX}{raceId}`
+
+	-- 출발선 뒤쪽 (추격자가 달려오는 구간)
+	local backZ = -(headStart + course.backExtra)
+	buildSegment(folder, origin, trackWidth, backZ, 0, 0)
+
+	-- 출발선 앞쪽
+	local index = 1
+	local z = 0
+	while z < length do
+		local nextZ = math.min(length, z + course.segmentLength)
+		buildSegment(folder, origin, trackWidth, z, nextZ, index)
+		z = nextZ
+		index += 1
+	end
+
+	-- 앞뒤 끝을 막는 벽
+	local outerWidth = trackWidth + course.wallThickness * 2
+	for _, endZ in { backZ - course.wallThickness / 2, length + course.wallThickness / 2 } do
+		local wall = makePart(
+			folder,
+			"EndWall",
+			Vector3.new(outerWidth, course.wallHeight, course.wallThickness),
+			Vector3.new(origin.X, origin.Y + course.wallHeight / 2, origin.Z + endZ),
+			COLOR_WALL
+		)
+		wall.Transparency = 0.7
+		wall.CastShadow = false
+	end
+
+	buildStripe(folder, origin, trackWidth, 0, "StartLine", COLOR_START, 2)
+
+	local marker = course.markerEvery
+	while marker < length do
+		buildStripe(folder, origin, trackWidth, marker, `Marker{marker}`, COLOR_MARKER, 1)
+		marker += course.markerEvery
+	end
+
+	for obstacleIndex, obstacle in obstacles do
+		buildObstacle(folder, origin, trackWidth, obstacle, obstacleIndex)
+	end
+
+	local chaser = makePart(
+		folder,
+		World.CHASER_NAME,
+		Vector3.new(outerWidth, course.chaserHeight, course.chaserDepth),
+		Vector3.new(origin.X, origin.Y + course.chaserHeight / 2, origin.Z),
+		COLOR_CHASER
+	)
+	chaser.CanCollide = false
+	chaser.CastShadow = false
+	chaser.Material = Enum.Material.Neon
+	chaser.Transparency = 0.25
+
+	local built: Built = {
+		folder = folder,
+		chaser = chaser,
+		origin = origin,
+		length = length,
+		trackWidth = trackWidth,
+	}
+
+	CourseBuilder.moveChaser(built, -headStart)
+
+	folder.Parent = parent
+	return built
+end
+
+-- 추격자 앞면을 출발선 기준 front 칸 위치로 옮긴다.
+function CourseBuilder.moveChaser(built: Built, front: number)
+	local course = World.COURSE
+	local origin = built.origin
+
+	built.chaser.CFrame = CFrame.new(
+		origin.X,
+		origin.Y + course.chaserHeight / 2,
+		origin.Z + front - course.chaserDepth / 2
+	)
+end
+
+-- 출발선 위, 트랙 중심에서 offsetX 만큼 옆에 서서 코스 앞쪽(+Z)을 보는 자리
+function CourseBuilder.lineupCFrame(built: Built, offsetX: number): CFrame
+	local origin = built.origin
+	local position = Vector3.new(origin.X + offsetX, origin.Y + World.COURSE.spawnHeight, origin.Z)
+
+	return CFrame.lookAt(position, position + Vector3.new(0, 0, 1))
+end
+
+function CourseBuilder.destroy(built: Built)
+	built.folder:Destroy()
+end
+
+return CourseBuilder
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="29">
           <Properties>
             <string name="Name">DataService</string>
             <string name="Source"><![CDATA[--!strict
@@ -2929,7 +4330,7 @@ return DataService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="24">
+        <Item class="ModuleScript" referent="30">
           <Properties>
             <string name="Name">EconomyService</string>
             <string name="Source"><![CDATA[--!strict
@@ -3155,7 +4556,7 @@ return EconomyService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="25">
+        <Item class="ModuleScript" referent="31">
           <Properties>
             <string name="Name">EnhanceService</string>
             <string name="Source"><![CDATA[--!strict
@@ -3572,7 +4973,7 @@ return EnhanceService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="26">
+        <Item class="ModuleScript" referent="32">
           <Properties>
             <string name="Name">LeaderboardService</string>
             <string name="Source"><![CDATA[--!strict
@@ -3779,7 +5180,7 @@ return LeaderboardService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="27">
+        <Item class="ModuleScript" referent="33">
           <Properties>
             <string name="Name">LiveOpsService</string>
             <string name="Source"><![CDATA[--!strict
@@ -4042,7 +5443,834 @@ return LiveOpsService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="28">
+        <Item class="ModuleScript" referent="34">
+          <Properties>
+            <string name="Name">RaceService</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	RaceService — 추격 생존 경주 (통합 기획서 4절).
+
+	한 판의 흐름:
+	  1) 로비에서 "매칭"을 누르면 대기열에 들어간다.
+	  2) 대기열이 20명이 되면 바로, 아니면 첫 사람이 누른 뒤 7초에 대기열을 닫고
+	     전원을 출발선에 세운다. 3초 카운트다운 뒤 출발 (누른 뒤 10초 안에 출발).
+	  3) 모두가 공유하는 추격자 하나가 30칸 뒤에서 출발해 지수적으로 빨라진다.
+	  4) 추격자에게 따라잡히면 탈락. 그 순간 보상을 확정해 지급한다.
+	  5) 탈락한 사람은 관전하거나 "로비로" 를 눌러 나간다. 모두 탈락하면 판이 끝난다.
+
+	서버 권위 (통합 기획서 4-5절):
+	  - 클라이언트가 보내는 값은 "매칭", "대기 취소", "로비로" 요청뿐이다. 거리·속도·순위는 받지 않는다.
+	  - 거리는 서버가 매 프레임 캐릭터 위치를 보고 계산한다. 그 위치는 플레이어 기기가 만드는 값이라
+	    조작할 수 있으므로, "허용 최대 속도 × 지난 시간"까지만 인정한다(Pure/RaceLogic.effectivePosition).
+	    그보다 앞에 있다고 주장해도 한계 위치에 있는 것으로 보고 추격자가 그 위치를 지나면 탈락시킨다.
+	  - 이동 속도, 최대 거리, 보상은 "출발선에 섰을 때의 착용 검 레벨"로 정한다.
+	    경주 중에 검을 바꾸거나 강화해도 그 판에는 영향이 없다.
+
+	코스는 판마다 새로 짓는다(장애물 위치가 매번 다르다). 여러 판이 동시에 열릴 수 있어서
+	판마다 옆으로 떨어진 자리(slot)를 하나씩 쓴다.
+
+	아직 값이 없어서 자리만 만든 것:
+	  [미정 D6]  1~3위 보너스 → rankBonusFor
+	  [미정 D16] 특수 능력·도감 기념 업그레이드 → allowedSpeedFor (허용 속도에 반영할 자리)
+	  [미정 D17] 신규 유저 보호 → 방해 능력이 생길 때 함께 만든다
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Types = require(Shared:WaitForChild("Types"))
+local Remotes = require(Shared:WaitForChild("Remotes"))
+
+local ConfigFolder = Shared:WaitForChild("Config")
+local RaceConfig = require(ConfigFolder:WaitForChild("RaceConfig"))
+local EnhanceTable = require(ConfigFolder:WaitForChild("EnhanceTable"))
+local World = require(ConfigFolder:WaitForChild("World"))
+
+local Pure = Shared:WaitForChild("Pure")
+local RaceLogic = require(Pure:WaitForChild("RaceLogic"))
+local EnhanceLogic = require(Pure:WaitForChild("EnhanceLogic"))
+local SwordLogic = require(Pure:WaitForChild("SwordLogic"))
+
+local services = script.Parent
+local DataService = require(services:WaitForChild("DataService"))
+local EconomyService = require(services:WaitForChild("EconomyService"))
+local AnalyticsService = require(services:WaitForChild("AnalyticsService"))
+local LiveOpsService = require(services:WaitForChild("LiveOpsService"))
+local WorldService = require(services:WaitForChild("WorldService"))
+local RateLimiter = require(services:WaitForChild("RateLimiter"))
+local CourseBuilder = require(services:WaitForChild("CourseBuilder"))
+
+local RaceService = {}
+RaceService.Name = "RaceService"
+
+type Racer = {
+	player: Player,
+	userId: number,
+	name: string,
+	level: number, -- 출발선에 섰을 때의 착용 검 레벨
+	speed: number, -- 그 레벨의 이동 속도 v(L)
+	maxDistance: number, -- 그 레벨의 최대 거리 Dmax(L)
+	lane: number, -- 출발선에서 설 자리 (트랙 중심 기준 좌우)
+	best: number, -- 서버가 인정한 가장 먼 위치 (출발선 기준)
+	alive: boolean,
+	present: boolean, -- 아직 이 판에 붙어 있는지 (로비로 나가거나 접속을 끊으면 false)
+	rank: number, -- 탈락했을 때 정해진다 (끝까지 남은 사람이 1위)
+	distance: number, -- 보상에 쓴 거리
+	reward: number, -- 지급한 골드
+}
+
+type Race = {
+	id: number,
+	slot: number,
+	state: "lineup" | "running" | "finished",
+	course: CourseBuilder.Built,
+	racers: { Racer },
+	aliveCount: number,
+	placed: boolean, -- 캐릭터를 출발선으로 옮겼는지
+	placeAt: number, -- 출발선으로 옮기는 시각 (os.clock)
+	goAt: number, -- 출발 신호 시각
+	startedAt: number,
+	closeAt: number, -- 결과 표시가 끝나고 정리하는 시각
+}
+
+local CURVE: RaceLogic.Curve = {
+	minTime = RaceConfig.MIN_TIME_SECONDS,
+	maxTime = RaceConfig.MAX_TIME_SECONDS,
+	maxLevel = EnhanceTable.MAX_LEVEL,
+	accel = RaceConfig.CHASER_ACCEL,
+	headStart = RaceConfig.HEAD_START,
+	baseSpeed = RaceConfig.BASE_SPEED,
+}
+
+--[[
+	코스를 지은 뒤 캐릭터를 출발선으로 옮기기까지 두는 틈(초).
+	코스 파트가 플레이어 기기에 도착하기 전에 캐릭터부터 옮겨지면 바닥이 없는 곳에 떨어질 수 있다.
+	LINEUP_SECONDS 안에 포함된다.
+]]
+local PLACE_DELAY_SECONDS = 0.5
+
+local rng = Random.new()
+
+-- 플레이어당 초당 4회 (매칭 버튼 연타 방지)
+local limiter = RateLimiter.new({ maxRequests = 4, windowSeconds = 1 })
+
+local queue: { Player } = {}
+local queueOpenedAt = 0 -- 지금 대기열의 첫 사람이 들어온 시각
+
+local races: { [number]: Race } = {}
+local raceOf: { [Player]: Race } = {}
+local usedSlots: { [number]: boolean } = {}
+local nextRaceId = 1
+
+local updateRemote: RemoteEvent? = nil
+
+local function fail(reason: string): Types.Failure
+	return { ok = false, reason = reason }
+end
+
+local function send(player: Player, payload: Types.RaceUpdate)
+	if updateRemote and player.Parent == Players then
+		updateRemote:FireClient(player, payload)
+	end
+end
+
+-- 그 판에 아직 붙어 있는 사람 모두에게 보낸다(관전 중인 사람 포함).
+local function broadcast(race: Race, payload: Types.RaceUpdate)
+	for _, racer in race.racers do
+		if racer.present then
+			send(racer.player, payload)
+		end
+	end
+end
+
+local function humanoidOf(player: Player): Humanoid?
+	local character = player.Character
+	if character == nil then
+		return nil
+	end
+	return character:FindFirstChildOfClass("Humanoid")
+end
+
+local function rootOf(player: Player): BasePart?
+	local character = player.Character
+	local root = if character then character:FindFirstChild("HumanoidRootPart") else nil
+	if root and root:IsA("BasePart") then
+		return root
+	end
+	return nil
+end
+
+local function setWalkSpeed(player: Player, speed: number)
+	local humanoid = humanoidOf(player)
+	if humanoid then
+		humanoid.WalkSpeed = speed
+	end
+end
+
+local function findRacer(race: Race, player: Player): Racer?
+	for _, racer in race.racers do
+		if racer.player == player then
+			return racer
+		end
+	end
+	return nil
+end
+
+--------------------------------------------------------------------------------
+-- 수치
+--------------------------------------------------------------------------------
+
+-- 보상 = 그 레벨의 강화 비용(검 1개 기준, 할증 없음) × 배율 × 달린 비율
+local function rewardFor(level: number, distance: number, maxDistance: number): number
+	local odds = EnhanceTable.Odds[level]
+	local multiplier =
+		RaceLogic.rewardMultiplier(level, if odds then odds.success else 0, RaceConfig.Multiplier)
+	local cost =
+		EnhanceLogic.cost(level, 1, EnhanceTable.COST_BASE, EnhanceTable.SWORD_COUNT_EXPONENT)
+
+	return RaceLogic.reward(cost, multiplier, distance, maxDistance)
+end
+
+--[[
+	서버가 인정하는 최대 이동 속도.
+	[미정 D16] 도감 기념 업그레이드와 특수 능력이 속도를 올리게 되면 여기에 반영한다.
+	(반영하지 않으면 정상적으로 빨라진 사람의 거리를 서버가 깎게 된다.)
+]]
+local function allowedSpeedFor(racer: Racer): number
+	return racer.speed
+end
+
+--[[
+	[미정 D6] 1~3위 보너스. 크기와 지급 최소 인원이 정해지면 여기서 계산한다.
+	순위(racer.rank)와 참가 인원(#race.racers)은 탈락하는 순간 이미 정해져 있다.
+]]
+local function rankBonusFor(_race: Race, _racer: Racer): number
+	return 0
+end
+
+--------------------------------------------------------------------------------
+-- 대기열
+--------------------------------------------------------------------------------
+
+local function notifyQueue()
+	local waited = os.clock() - queueOpenedAt
+	local secondsLeft = RaceLogic.secondsUntilStart(waited, RaceConfig.MATCH_WINDOW_SECONDS)
+
+	for _, player in queue do
+		send(player, {
+			kind = "queue",
+			queued = true,
+			count = #queue,
+			secondsLeft = secondsLeft,
+		})
+	end
+end
+
+local function removeFromQueue(player: Player): boolean
+	local index = table.find(queue, player)
+	if index == nil then
+		return false
+	end
+	table.remove(queue, index)
+	return true
+end
+
+--------------------------------------------------------------------------------
+-- 로비로 돌려보내기
+--------------------------------------------------------------------------------
+
+local function sendToLobby(player: Player)
+	WorldService.teleportToLobby(player)
+	setWalkSpeed(player, RaceConfig.BASE_SPEED)
+	send(player, { kind = "lobby" })
+end
+
+--------------------------------------------------------------------------------
+-- 탈락과 보상
+--------------------------------------------------------------------------------
+
+--[[
+	탈락 처리. 이 순간 보상을 확정해 지급한다(바로 로비로 나가도 잃지 않는다).
+	yield 하지 않는다.
+
+	unloadingData: 접속을 끊는 중에 불린 경우 DataService 가 넘겨준 데이터.
+	그때는 getActiveData 가 이미 nil 이라 이 데이터에 직접 지급한다(곧바로 저장된다).
+]]
+local function eliminate(race: Race, racer: Racer, unloadingData: Types.PlayerData?)
+	if not racer.alive then
+		return
+	end
+
+	racer.alive = false
+	race.aliveCount -= 1
+	racer.rank = race.aliveCount + 1
+	racer.distance = RaceLogic.creditedDistance(racer.best, RaceConfig.DEAD_ZONE)
+
+	local player = racer.player
+	local bonus = rankBonusFor(race, racer)
+	local amount = rewardFor(racer.level, racer.distance, racer.maxDistance) + bonus
+
+	local data = unloadingData or DataService.getActiveData(player)
+	if data ~= nil then
+		racer.reward = EconomyService.addGold(player, data, amount, "race_reward")
+		if unloadingData == nil then
+			DataService.replicate(player)
+		end
+	end
+
+	setWalkSpeed(player, 0)
+
+	AnalyticsService.logFunnel(player, "race_eliminated", {
+		level = racer.level,
+		distance = racer.distance,
+		rank = racer.rank,
+		reward = racer.reward,
+	})
+
+	send(player, {
+		kind = "result",
+		raceId = race.id,
+		rank = racer.rank,
+		racerCount = #race.racers,
+		level = racer.level,
+		distance = math.floor(racer.distance),
+		maxDistance = racer.maxDistance,
+		reward = racer.reward,
+		bonus = bonus,
+	})
+
+	broadcast(race, {
+		kind = "eliminated",
+		raceId = race.id,
+		userId = racer.userId,
+		rank = racer.rank,
+		distance = math.floor(racer.distance),
+	})
+end
+
+--------------------------------------------------------------------------------
+-- 판 시작 · 진행 · 끝
+--------------------------------------------------------------------------------
+
+local function takeSlot(): number
+	local slot = 0
+	while usedSlots[slot] do
+		slot += 1
+	end
+	usedSlots[slot] = true
+	return slot
+end
+
+-- 대기열에 있던 사람들로 한 판을 연다.
+local function startRace(batch: { Player })
+	local racers: { Racer } = {}
+
+	for _, player in batch do
+		local data = DataService.getActiveData(player)
+		local sword = if data then SwordLogic.equipped(data.swords, data.equippedId) else nil
+		local humanoid = humanoidOf(player)
+
+		local canRace = player.Parent == Players
+			and sword ~= nil
+			and humanoid ~= nil
+			and humanoid.Health > 0
+			and rootOf(player) ~= nil
+			and raceOf[player] == nil
+
+		if not canRace or sword == nil then
+			-- 기다리는 사이에 나갔거나 캐릭터가 없다. 대기열에서 빠졌다고 알려 준다.
+			send(player, { kind = "queue", queued = false })
+			continue
+		end
+
+		local level = sword.level
+		table.insert(racers, {
+			player = player,
+			userId = player.UserId,
+			name = player.DisplayName,
+			level = level,
+			speed = RaceLogic.runSpeed(level, CURVE),
+			maxDistance = RaceLogic.maxDistance(level, CURVE),
+			lane = 0,
+			best = 0,
+			alive = true,
+			present = true,
+			rank = 0,
+			distance = 0,
+			reward = 0,
+		})
+	end
+
+	if #racers == 0 then
+		return
+	end
+
+	-- 출발 자리를 섞는다.
+	for index = #racers, 2, -1 do
+		local other = rng:NextInteger(1, index)
+		racers[index], racers[other] = racers[other], racers[index]
+	end
+
+	-- 코스 길이는 이 판에서 가장 멀리 갈 수 있는 사람 기준.
+	local topDistance = 0
+	for _, racer in racers do
+		topDistance = math.max(topDistance, racer.maxDistance)
+	end
+
+	local courseConfig = RaceConfig.Course
+	local length = RaceLogic.courseLength(topDistance, courseConfig)
+	local obstacles = RaceLogic.generateObstacles(length, courseConfig, function(): number
+		return rng:NextNumber()
+	end)
+
+	local slot = takeSlot()
+	local id = nextRaceId
+	nextRaceId += 1
+
+	local origin = Vector3.new(slot * World.COURSE.slotSpacing, 0, World.COURSE.startZ)
+
+	local ok, result = pcall(
+		CourseBuilder.build,
+		WorldService.getRacesFolder(),
+		id,
+		origin,
+		length,
+		RaceConfig.HEAD_START,
+		courseConfig.trackWidth,
+		obstacles
+	)
+
+	if not ok then
+		usedSlots[slot] = nil
+		error(`코스를 짓지 못했습니다: {result}`, 0)
+	end
+
+	local now = os.clock()
+	local race: Race = {
+		id = id,
+		slot = slot,
+		state = "lineup",
+		course = result :: CourseBuilder.Built,
+		racers = racers,
+		aliveCount = #racers,
+		placed = false,
+		placeAt = now + PLACE_DELAY_SECONDS,
+		goAt = now + RaceConfig.LINEUP_SECONDS,
+		startedAt = 0,
+		closeAt = 0,
+	}
+	races[id] = race
+
+	local offsets =
+		RaceLogic.lineupOffsets(#racers, courseConfig.lineupWidth, courseConfig.lineupMaxSpacing)
+	local entrants: { Types.RaceEntrant } = {}
+
+	for index, racer in racers do
+		raceOf[racer.player] = race
+		racer.lane = offsets[index]
+
+		-- 출발 신호 전에는 움직이지 못한다. (출발선으로는 잠시 뒤 stepRace 가 옮긴다)
+		setWalkSpeed(racer.player, 0)
+
+		table.insert(entrants, {
+			userId = racer.userId,
+			name = racer.name,
+			level = racer.level,
+		})
+	end
+
+	for _, racer in racers do
+		send(racer.player, {
+			kind = "lineup",
+			raceId = id,
+			countdown = RaceConfig.LINEUP_SECONDS,
+			originX = origin.X,
+			originZ = origin.Z,
+			level = racer.level,
+			speed = racer.speed,
+			maxDistance = racer.maxDistance,
+			entrants = entrants,
+		})
+		AnalyticsService.logFunnel(racer.player, "race_start", {
+			level = racer.level,
+			racers = #racers,
+		})
+	end
+end
+
+-- 모두 탈락했다. 최종 순위를 알리고 잠시 뒤 정리한다.
+local function finishRace(race: Race, now: number)
+	race.state = "finished"
+	race.closeAt = now + RaceConfig.RESULT_SECONDS
+
+	local ranking: { Types.RaceRankingRow } = {}
+	for _, racer in race.racers do
+		table.insert(ranking, {
+			rank = racer.rank,
+			userId = racer.userId,
+			name = racer.name,
+			level = racer.level,
+			distance = math.floor(racer.distance),
+		})
+	end
+	table.sort(ranking, function(a, b)
+		return a.rank < b.rank
+	end)
+
+	broadcast(race, {
+		kind = "finished",
+		raceId = race.id,
+		ranking = ranking,
+		returnIn = RaceConfig.RESULT_SECONDS,
+	})
+end
+
+-- 판을 치운다. 아직 남아 있는 사람은 로비로 돌려보내고 코스를 지운다.
+local function closeRace(race: Race)
+	races[race.id] = nil
+	usedSlots[race.slot] = nil
+
+	for _, racer in race.racers do
+		local player = racer.player
+		if raceOf[player] == race then
+			raceOf[player] = nil
+		end
+
+		if racer.present then
+			racer.present = false
+			if player.Parent == Players then
+				sendToLobby(player)
+			end
+		end
+	end
+
+	CourseBuilder.destroy(race.course)
+end
+
+-- 캐릭터를 출발선의 자기 자리로 옮긴다.
+local function placeOnLine(race: Race, racer: Racer)
+	local character = racer.player.Character
+	if character then
+		character:PivotTo(CourseBuilder.lineupCFrame(race.course, racer.lane))
+	end
+end
+
+local function stepRace(race: Race, now: number)
+	if race.state == "lineup" then
+		if not race.placed and now >= race.placeAt then
+			race.placed = true
+			for _, racer in race.racers do
+				if racer.alive then
+					placeOnLine(race, racer)
+				end
+			end
+		end
+
+		if now < race.goAt then
+			return
+		end
+
+		race.state = "running"
+		race.startedAt = now
+
+		local floorY = race.course.origin.Y
+		for _, racer in race.racers do
+			if not racer.alive then
+				continue
+			end
+
+			-- 드물게 바닥보다 먼저 옮겨져 아래로 떨어진 사람은 출발선에 다시 세운다.
+			local root = rootOf(racer.player)
+			if root and root.Position.Y < floorY - 5 then
+				placeOnLine(race, racer)
+			end
+
+			setWalkSpeed(racer.player, racer.speed)
+		end
+
+		broadcast(race, { kind = "start", raceId = race.id })
+		return
+	end
+
+	if race.state == "finished" then
+		if now >= race.closeAt then
+			closeRace(race)
+		end
+		return
+	end
+
+	-- 달리는 중
+	local elapsed = now - race.startedAt
+	local front = RaceLogic.chaserFront(elapsed, CURVE)
+	CourseBuilder.moveChaser(race.course, front)
+
+	local originZ = race.course.origin.Z
+	local caught: { Racer } = {}
+
+	for _, racer in race.racers do
+		if not racer.alive then
+			continue
+		end
+
+		local player = racer.player
+		local root = rootOf(player)
+		local humanoid = humanoidOf(player)
+
+		if player.Parent ~= Players or root == nil or humanoid == nil or humanoid.Health <= 0 then
+			-- 접속이 끊겼거나 캐릭터가 죽었다. 지금까지 인정된 거리로 탈락 처리한다.
+			table.insert(caught, racer)
+			continue
+		end
+
+		local position = RaceLogic.effectivePosition(
+			root.Position.Z - originZ,
+			elapsed,
+			allowedSpeedFor(racer),
+			RaceConfig.SPEED_TOLERANCE,
+			RaceConfig.DISTANCE_SLACK
+		)
+
+		if position > racer.best then
+			racer.best = position
+		end
+
+		if front >= position then
+			table.insert(caught, racer)
+		end
+	end
+
+	if #caught > 0 then
+		-- 같은 순간에 여럿이 잡히면 덜 간 사람부터 탈락시킨다(더 간 사람의 순위가 높다).
+		table.sort(caught, function(a, b)
+			if a.best ~= b.best then
+				return a.best < b.best
+			end
+			return a.userId < b.userId
+		end)
+
+		for _, racer in caught do
+			eliminate(race, racer, nil)
+		end
+	end
+
+	if race.aliveCount <= 0 then
+		finishRace(race, now)
+	end
+end
+
+local function step()
+	local now = os.clock()
+
+	if
+		RaceLogic.shouldDepart(
+			#queue,
+			now - queueOpenedAt,
+			RaceConfig.MATCH_WINDOW_SECONDS,
+			RaceConfig.LINEUP_SECONDS,
+			RaceConfig.MATCH_FULL_COUNT
+		)
+	then
+		local batch = queue
+		queue = {}
+
+		local ok, err = xpcall(startRace, debug.traceback, batch)
+		if not ok then
+			warn(`[RaceService] 판을 열지 못했습니다:\n{err}`)
+			for _, player in batch do
+				if raceOf[player] == nil then
+					send(player, { kind = "queue", queued = false })
+				end
+			end
+		end
+	end
+
+	for _, race in races do
+		local ok, err = xpcall(stepRace, debug.traceback, race, now)
+		if not ok then
+			-- 같은 오류가 매 프레임 반복되지 않도록 그 판을 닫고 사람들을 로비로 돌려보낸다.
+			warn(`[RaceService] 판 {race.id} 진행 중 오류, 판을 닫습니다:\n{err}`)
+			local closed, closeErr = pcall(closeRace, race)
+			if not closed then
+				warn(`[RaceService] 판 {race.id} 정리 실패: {closeErr}`)
+				races[race.id] = nil
+			end
+		end
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 리모트
+--------------------------------------------------------------------------------
+
+local function handleJoin(player: Player): Types.SimpleResponse
+	if not limiter:consume(player.UserId) then
+		return fail("too_fast")
+	end
+
+	if LiveOpsService.isMaintenance() then
+		return fail("maintenance")
+	end
+
+	local data = DataService.getActiveData(player)
+	if data == nil or SwordLogic.equipped(data.swords, data.equippedId) == nil then
+		return fail("not_ready")
+	end
+
+	if raceOf[player] ~= nil then
+		return fail("in_race")
+	end
+
+	local humanoid = humanoidOf(player)
+	if humanoid == nil or humanoid.Health <= 0 then
+		return fail("not_ready")
+	end
+
+	if table.find(queue, player) == nil then
+		if #queue == 0 then
+			queueOpenedAt = os.clock()
+		end
+		table.insert(queue, player)
+		AnalyticsService.logFunnel(player, "race_queue")
+	end
+
+	notifyQueue()
+	return { ok = true }
+end
+
+local function handleLeaveQueue(player: Player): Types.SimpleResponse
+	if not limiter:consume(player.UserId) then
+		return fail("too_fast")
+	end
+
+	if removeFromQueue(player) then
+		notifyQueue()
+	end
+	send(player, { kind = "queue", queued = false })
+
+	return { ok = true }
+end
+
+--[[
+	"로비로". 탈락한 뒤 관전을 끝내고 나갈 때 쓴다.
+	아직 달리는 중(탈락 전)에는 쓸 수 없다. 경주 중이 아닐 때 누르면 그냥 로비 스폰으로 옮겨 준다.
+]]
+local function handleReturnToLobby(player: Player): Types.SimpleResponse
+	if not limiter:consume(player.UserId) then
+		return fail("too_fast")
+	end
+
+	local race = raceOf[player]
+	if race ~= nil then
+		local racer = findRacer(race, player)
+		if racer ~= nil then
+			if racer.alive then
+				return fail("in_race")
+			end
+			racer.present = false
+		end
+		raceOf[player] = nil
+	end
+
+	sendToLobby(player)
+	return { ok = true }
+end
+
+-- 처리 중 오류가 나도 클라이언트에는 { ok = false } 를 돌려준다.
+local function guarded(handler: (player: Player) -> Types.SimpleResponse)
+	return function(player: Player): Types.SimpleResponse
+		local ok, response = xpcall(handler, debug.traceback, player)
+		if not ok then
+			warn(`[RaceService] 요청 처리 중 오류 ({player.UserId}):\n{response}`)
+			return fail("unknown")
+		end
+		return response
+	end
+end
+
+--------------------------------------------------------------------------------
+
+function RaceService.Init()
+	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
+
+	updateRemote = remotesFolder:WaitForChild(Remotes.Events.RaceUpdate) :: RemoteEvent
+
+	local joinRemote = remotesFolder:WaitForChild(Remotes.Functions.JoinRace) :: RemoteFunction
+	joinRemote.OnServerInvoke = guarded(handleJoin)
+
+	local leaveRemote =
+		remotesFolder:WaitForChild(Remotes.Functions.LeaveRaceQueue) :: RemoteFunction
+	leaveRemote.OnServerInvoke = guarded(handleLeaveQueue)
+
+	local lobbyRemote =
+		remotesFolder:WaitForChild(Remotes.Functions.ReturnToLobby) :: RemoteFunction
+	lobbyRemote.OnServerInvoke = guarded(handleReturnToLobby)
+end
+
+function RaceService.Start()
+	--[[
+		접속을 끊는 순간. DataService 가 저장 직전에 데이터를 넘겨준다.
+		달리던 중이었다면 지금까지의 거리로 보상을 확정해 그 데이터에 넣는다.
+	]]
+	DataService.onUnloading(function(player, data)
+		if removeFromQueue(player) then
+			notifyQueue()
+		end
+
+		local race = raceOf[player]
+		if race == nil then
+			return
+		end
+
+		local racer = findRacer(race, player)
+		if racer ~= nil then
+			if racer.alive then
+				eliminate(race, racer, data)
+			end
+			racer.present = false
+		end
+		raceOf[player] = nil
+	end)
+
+	Players.PlayerRemoving:Connect(function(player)
+		limiter:clear(player.UserId)
+
+		-- 프로필이 열리기 전에 나간 경우 등 위 경로를 타지 않았을 때의 뒷정리.
+		task.defer(function()
+			if removeFromQueue(player) then
+				notifyQueue()
+			end
+
+			local race = raceOf[player]
+			if race == nil then
+				return
+			end
+
+			local racer = findRacer(race, player)
+			if racer ~= nil then
+				if racer.alive then
+					eliminate(race, racer, nil)
+				end
+				racer.present = false
+			end
+			raceOf[player] = nil
+		end)
+	end)
+
+	RunService.Heartbeat:Connect(step)
+end
+
+-- 지금 경주에 붙어 있는지 (달리는 중이거나 관전 중)
+function RaceService.isInRace(player: Player): boolean
+	return raceOf[player] ~= nil
+end
+
+return RaceService
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="35">
           <Properties>
             <string name="Name">RateLimiter</string>
             <string name="Source"><![CDATA[--!strict
@@ -4154,19 +6382,33 @@ return RateLimiter
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="29">
+        <Item class="ModuleScript" referent="36">
           <Properties>
             <string name="Name">ShopService</string>
             <string name="Source"><![CDATA[--!strict
 --[[
-	ShopService — 개발자 상품(Robux 로 사는 것).
+	ShopService — 방지권 상품(Robux)과 파편 뽑기 (통합 기획서 3-4절, 7절).
 
-	설계 원칙 (통합 기획서 6·7절):
-	- 유료 상품은 방지권뿐이다. 골드 팩·게임패스는 없고, 골드를 주거나 골드 획득량을
-	  늘리는 상품은 만들지 않는다.
-	- 지금 있는 것은 "정해진 개수의 방지권"을 주는 상품 틀뿐이다. 방지권 상품 3종
-	  (확정 1개 / 확정 묶음 / 확률형 + 천장 포인트)은 아직 만들지 않았다.
-	- 확률표는 상품 여부와 관계없이 강화 화면에서 항상 볼 수 있다.
+	상품 세 가지 (Config/Products):
+	  확정 1개 / 확정 묶음 / 확률형(꽝이면 천장 포인트 +1, 3점이면 방지권 1개 후 0점)
+	그리고 Robux 가 닿지 않는 파편 뽑기(파편 50개 = 1회, 천장 포인트 없음).
+
+	설계 원칙:
+	- 유료 상품은 방지권뿐이다. 골드·파편을 주거나 골드 획득량을 늘리는 상품은 만들지 않는다.
+	- ID 나 내용이 비어 있는 상품은 목록에 넣지 않고 구매 요청도 받지 않는다
+	  (개수·확률·가격은 미정 D12, 상품 ID 는 개발자 입력 대기).
+
+	로블록스 유료 확률형 정책 (통합 기획서 7절, creator-docs paid-random-items.md 로 확인):
+	  1) 사기 전에 모든 결과와 확률을 %로, 합계 정확히 100% 로 보여 준다
+	     → GetShopItems 가 결과별 %를 함께 보낸다(Pure/SwordLogic.exactPercents, 합이 정확히 100).
+	  2) 확률을 바꾸는 장치(방지권, 천장)는 숫자로 설명하고 적용 중이면 표시를 바꾼다
+	     → 방지권은 강화 화면이, 천장은 상점 화면이 처리한다.
+	  3) PolicyService 의 ArePaidRandomItemsRestricted 가 참인 유저에게는 확률형을 숨긴다
+	     → 목록에서 빼고, 구매창도 띄우지 않고, 혹시 결제가 들어와도 뽑지 않는다.
+	     확인에 실패하면 제한된 것으로 본다(안전한 쪽).
+	  4) 결제가 재시도돼도 다시 뽑지 않는다
+	     → 뽑기 결과·천장 포인트 변경·PurchaseId 기록을 yield 없는 한 번의 변경으로 처리한다.
+	       같은 PurchaseId 가 다시 오면 기록을 보고 건너뛴다.
 
 	ProcessReceipt 구현은 ProfileStore 공식 문서의 "PurchaseId 캐싱" 방식을 따른다.
 	핵심은 "지급했다"가 아니라 "지급한 사실이 DataStore 에 저장됐다"를 확인한 뒤에야
@@ -4183,40 +6425,145 @@ return RateLimiter
 
 local MarketplaceService = game:GetService("MarketplaceService")
 local Players = game:GetService("Players")
+local PolicyService = game:GetService("PolicyService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Types = require(Shared:WaitForChild("Types"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
+local Locale = require(Shared:WaitForChild("Locale"))
 
 local ConfigFolder = Shared:WaitForChild("Config")
 local Products = require(ConfigFolder:WaitForChild("Products"))
+
+local Pure = Shared:WaitForChild("Pure")
+local DrawLogic = require(Pure:WaitForChild("DrawLogic"))
+local SwordLogic = require(Pure:WaitForChild("SwordLogic"))
 
 local services = script.Parent
 local DataService = require(services:WaitForChild("DataService"))
 local EconomyService = require(services:WaitForChild("EconomyService"))
 local AnalyticsService = require(services:WaitForChild("AnalyticsService"))
+local LiveOpsService = require(services:WaitForChild("LiveOpsService"))
+local RateLimiter = require(services:WaitForChild("RateLimiter"))
 
 local ShopService = {}
 ShopService.Name = "ShopService"
 
+-- 서버 난수. 뽑기 결과는 서버에서만 정한다.
+local rng = Random.new()
+
+-- 플레이어당 초당 3회, 동시 처리 1건 (파편 뽑기)
+local limiter = RateLimiter.new({ maxRequests = 3, windowSeconds = 1 })
+
+-- 표시 확률의 소수 자릿수
+local PERCENT_DECIMALS = 2
+
+-- 유료 확률형 제한 여부(PolicyService). true = 제한됨. 확인에 성공한 값만 넣는다.
+local restrictedCache: { [Player]: boolean } = {}
+
+local feedRemote: RemoteEvent? = nil
+
 local function fail(reason: string): Types.Failure
 	return { ok = false, reason = reason }
+end
+
+-- 그 플레이어의 채팅·피드에 한 줄 띄운다.
+local function notify(player: Player, text: string)
+	if feedRemote and player.Parent == Players then
+		feedRemote:FireClient(player, { kind = "system", text = text })
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 유료 확률형 제한 확인
+--------------------------------------------------------------------------------
+
+--[[
+	이 플레이어가 유료 확률형 아이템을 쓸 수 없는지. **yield 한다**(웹 요청).
+	확인에 실패하면 true(제한됨)를 돌려주고 캐시하지 않는다 → 다음에 다시 확인한다.
+]]
+local function isRandomRestricted(player: Player): boolean
+	local cached = restrictedCache[player]
+	if cached ~= nil then
+		return cached
+	end
+
+	local ok, info = pcall(function()
+		return PolicyService:GetPolicyInfoForPlayerAsync(player)
+	end)
+
+	if not ok or type(info) ~= "table" then
+		warn(`[ShopService] 정책 정보를 받지 못했습니다 ({player.UserId}): {info}`)
+		return true
+	end
+
+	-- 값이 명확히 false 일 때만 허용한다.
+	local restricted = info.ArePaidRandomItemsRestricted ~= false
+
+	if player.Parent == Players then
+		restrictedCache[player] = restricted
+	end
+	return restricted
 end
 
 --------------------------------------------------------------------------------
 -- 개발자 상품 지급
 --------------------------------------------------------------------------------
 
--- 상품 하나를 지급한다. yield 하지 않는다.
+--[[
+	상품 하나를 지급한다. **yield 하지 않는다.**
+	확률형은 여기서 한 번만 뽑는다. 이 함수가 끝나면 호출자가 곧바로 같은 흐름에서
+	PurchaseId 를 기록하므로, 같은 결제가 다시 와도 다시 뽑히지 않는다.
+]]
 local function grantProduct(
 	player: Player,
 	data: Types.PlayerData,
 	product: Products.DeveloperProduct
 )
-	if product.ticketAmount > 0 then
-		EconomyService.addTickets(player, data, product.ticketAmount, `purchase_{product.key}`)
+	local language = data.settings.language
+	local reason = `purchase_{product.key}`
+
+	if product.kind == "fixed" then
+		EconomyService.addTickets(player, data, product.ticketAmount, reason)
+		notify(player, Locale.get(language, "shop.granted", product.ticketAmount))
+		return
 	end
+
+	local result = DrawLogic.resolvePaid(
+		product.outcomes,
+		rng:NextNumber(),
+		data.pityPoints,
+		Products.PITY_PER_MISS,
+		Products.PITY_THRESHOLD,
+		Products.PITY_TICKETS
+	)
+	if result == nil then
+		error("확률형 상품의 결과 목록이 비어 있습니다", 0)
+	end
+
+	-- 여기서부터 실제 변경.
+	data.pityPoints = result.pityAfter
+	if result.totalTickets > 0 then
+		EconomyService.addTickets(player, data, result.totalTickets, reason)
+	end
+
+	if not result.isMiss then
+		notify(player, Locale.get(language, "shop.randomWin", result.rolledTickets))
+	elseif result.pityTickets > 0 then
+		notify(player, Locale.get(language, "shop.randomPity", result.pityTickets))
+	else
+		notify(
+			player,
+			Locale.get(language, "shop.randomMiss", result.pityAfter, Products.PITY_THRESHOLD)
+		)
+	end
+
+	AnalyticsService.logFunnel(player, "ticket_random", {
+		tickets = result.rolledTickets,
+		pityTickets = result.pityTickets,
+		pityAfter = result.pityAfter,
+	})
 end
 
 local function historyContains(history: { string }, purchaseId: string): boolean
@@ -4239,7 +6586,7 @@ local function grantAndConfirm(
 
 	local data = profile.Data :: Types.PlayerData
 
-	-- 아직 지급하지 않았다면 지급과 기록을 함께 처리한다.
+	-- 아직 지급하지 않았다면 지급과 기록을 함께 처리한다. (이 구간에는 yield 가 없다)
 	if not historyContains(data.purchaseHistory, purchaseId) then
 		local ok, err = pcall(grantProduct, player, data, product)
 		if not ok then
@@ -4303,6 +6650,30 @@ local function processReceipt(receipt: any): Enum.ProductPurchaseDecision
 		return Enum.ProductPurchaseDecision.NotProcessedYet
 	end
 
+	if not Products.isSellable(product) then
+		warn(
+			`[ShopService] 내용이 비어 있는 상품의 결제가 들어왔습니다: {product.key}`
+		)
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+
+	--[[
+		유료 확률형이 제한된 유저의 결제는 뽑지 않고 "아직 처리 안 됨"으로 둔다.
+		상점은 이런 유저에게 확률형을 보여 주지도, 구매창을 띄우지도 않으므로 게임 안의 정상
+		경로로는 여기 올 수 없다. (조작한 클라이언트가 직접 구매창을 띄웠거나, 상품을 게임 소개
+		페이지의 Store 탭에 노출한 경우에만 생긴다 → 확률형은 Store 탭에 올리지 말 것.)
+
+		[결정 필요] 공식 문서상 처리 안 된 결제는 자동으로 환불되지 않고, 접속할 때마다 다시
+		들어온다. 이런 결제에 무엇을 줄지(예: 확정 개수로 바꿔 지급)는 기획에 없어서 정하지 않았다.
+		정해지면 여기서 지급하면 되고, 그때까지 쌓인 결제도 다음 접속 때 함께 처리된다.
+	]]
+	if product.kind == "random" and isRandomRestricted(player) then
+		warn(
+			`[ShopService] 확률형이 제한된 유저의 결제를 처리하지 않습니다 ({player.UserId})`
+		)
+		return Enum.ProductPurchaseDecision.NotProcessedYet
+	end
+
 	-- 프로필이 열릴 때까지 기다린다(방금 접속한 직후일 수 있다).
 	local profile = DataService.getProfile(player)
 	while profile == nil and player.Parent == Players do
@@ -4318,28 +6689,66 @@ local function processReceipt(receipt: any): Enum.ProductPurchaseDecision
 end
 
 --------------------------------------------------------------------------------
--- 리모트
+-- 상점 목록
 --------------------------------------------------------------------------------
 
-local function handleGetShopItems(_player: Player): { Types.ShopItem }
+-- 결과 목록을 "결과 + 표시 확률" 로 바꾼다. 표시 확률의 합은 정확히 100 이다.
+local function describeOutcomes(outcomes: { Products.TicketOutcome }): { Types.ShopOutcome }
+	local percents = SwordLogic.exactPercents(DrawLogic.weights(outcomes), PERCENT_DECIMALS)
+
+	local described: { Types.ShopOutcome } = {}
+	for index, outcome in outcomes do
+		described[index] = { tickets = outcome.tickets, percent = percents[index] }
+	end
+	return described
+end
+
+-- yield 할 수 있다(확률형 제한 확인).
+local function handleGetShopItems(player: Player): Types.ShopState
 	local items: { Types.ShopItem } = {}
 
-	for key, product in Products.DeveloperProducts do
-		if product.productId == 0 then
-			continue -- ID 를 넣지 않은 상품은 노출하지 않는다
+	for _, key in Products.ORDER do
+		local product = Products.DeveloperProducts[key]
+		if product == nil or not Products.isSellable(product) then
+			continue -- ID 나 내용을 넣지 않은 상품은 노출하지 않는다
 		end
 
-		table.insert(items, {
-			key = key,
-			ticketAmount = product.ticketAmount,
-		})
+		if product.kind == "random" then
+			if isRandomRestricted(player) then
+				continue -- 유료 확률형이 제한된 유저에게는 확정형만 보여 준다
+			end
+			table.insert(items, {
+				key = key,
+				kind = "random",
+				ticketAmount = 0,
+				outcomes = describeOutcomes(product.outcomes),
+			})
+		else
+			table.insert(items, {
+				key = key,
+				kind = "fixed",
+				ticketAmount = product.ticketAmount,
+				outcomes = {},
+			})
+		end
 	end
 
-	table.sort(items, function(a, b)
-		return a.key < b.key
-	end)
+	local shardDraw: Types.ShopShardDraw? = nil
+	local shardConfig = Products.SHARD_DRAW
+	if Products.isDrawReady(shardConfig.outcomes) then
+		shardDraw = {
+			cost = shardConfig.cost,
+			outcomes = describeOutcomes(shardConfig.outcomes),
+		}
+	end
 
-	return items
+	return {
+		items = items,
+		pityPerMiss = Products.PITY_PER_MISS,
+		pityThreshold = Products.PITY_THRESHOLD,
+		pityTickets = Products.PITY_TICKETS,
+		shardDraw = shardDraw,
+	}
 end
 
 local function handlePromptPurchase(player: Player, key: any): Types.SimpleResponse
@@ -4348,7 +6757,11 @@ local function handlePromptPurchase(player: Player, key: any): Types.SimpleRespo
 	end
 
 	local product = Products.DeveloperProducts[key]
-	if product == nil or product.productId == 0 then
+	if product == nil or not Products.isSellable(product) then
+		return fail("not_available")
+	end
+
+	if product.kind == "random" and isRandomRestricted(player) then
 		return fail("not_available")
 	end
 
@@ -4357,8 +6770,82 @@ local function handlePromptPurchase(player: Player, key: any): Types.SimpleRespo
 end
 
 --------------------------------------------------------------------------------
+-- 파편 뽑기 (Robux 가 닿지 않는다)
+--------------------------------------------------------------------------------
+
+-- 파편 50개로 방지권 뽑기 1회. yield 하지 않는다.
+local function processShardDraw(player: Player): Types.ShardDrawResponse
+	if LiveOpsService.isMaintenance() then
+		return fail("maintenance")
+	end
+
+	local config = Products.SHARD_DRAW
+	if not Products.isDrawReady(config.outcomes) then
+		return fail("not_available") -- 확률이 아직 정해지지 않았다 (미정 D12)
+	end
+
+	local data = DataService.getActiveData(player)
+	if data == nil then
+		return fail("not_ready")
+	end
+
+	if data.shards < config.cost then
+		return fail("not_enough_shards")
+	end
+
+	local result = DrawLogic.resolveFree(config.outcomes, rng:NextNumber())
+	if result == nil then
+		return fail("not_available")
+	end
+
+	-- 여기서부터 실제 변경.
+	EconomyService.spendShards(player, data, config.cost, "shard_draw")
+	if result.tickets > 0 then
+		EconomyService.addTickets(player, data, result.tickets, "shard_draw")
+	end
+
+	AnalyticsService.logFunnel(player, "shard_draw", { tickets = result.tickets })
+
+	return {
+		ok = true,
+		tickets = result.tickets,
+		shards = data.shards,
+	}
+end
+
+local function handleShardDraw(player: Player): Types.ShardDrawResponse
+	if not limiter:consume(player.UserId) then
+		return fail("too_fast")
+	end
+	if not limiter:tryLock(player.UserId) then
+		return fail("busy")
+	end
+
+	local ok, response = xpcall(processShardDraw, debug.traceback, player)
+
+	limiter:unlock(player.UserId)
+
+	if not ok then
+		warn(`[ShopService] 파편 뽑기 처리 중 오류 ({player.UserId}):\n{response}`)
+		return fail("unknown")
+	end
+
+	if response.ok then
+		DataService.replicate(player)
+	end
+
+	return response
+end
+
+--------------------------------------------------------------------------------
 
 function ShopService.Init()
+	-- 상품 설정이 잘못된 채로 서버가 뜨는 일이 없도록 시작할 때 검사한다.
+	local problem = Products.validate()
+	if problem ~= nil then
+		error(`[ShopService] 상품 설정이 잘못되었습니다: {problem}`, 0)
+	end
+
 	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
 
 	local itemsRemote = remotesFolder:WaitForChild(Remotes.Functions.GetShopItems) :: RemoteFunction
@@ -4367,18 +6854,28 @@ function ShopService.Init()
 	local promptRemote =
 		remotesFolder:WaitForChild(Remotes.Functions.PromptPurchase) :: RemoteFunction
 	promptRemote.OnServerInvoke = handlePromptPurchase
+
+	local shardRemote = remotesFolder:WaitForChild(Remotes.Functions.ShardDraw) :: RemoteFunction
+	shardRemote.OnServerInvoke = handleShardDraw
+
+	feedRemote = remotesFolder:WaitForChild(Remotes.Events.FeedMessage) :: RemoteEvent
 end
 
 function ShopService.Start()
 	-- 콜백은 서버 전체에 딱 한 번만 설정한다.
 	MarketplaceService.ProcessReceipt = processReceipt
+
+	Players.PlayerRemoving:Connect(function(player)
+		restrictedCache[player] = nil
+		limiter:clear(player.UserId)
+	end)
 end
 
 return ShopService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="30">
+        <Item class="ModuleScript" referent="37">
           <Properties>
             <string name="Name">SwordService</string>
             <string name="Source"><![CDATA[--!strict
@@ -4557,12 +7054,495 @@ return SwordService
 ]]></string>
           </Properties>
         </Item>
+        <Item class="ModuleScript" referent="38">
+          <Properties>
+            <string name="Name">TreadmillService</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	TreadmillService — 로비 트레드밀 수입 (통합 기획서 6절).
+
+	발판 위에 있으면 단계별로 정해진 시간마다 골드를 받는다(1단계: 20초당 100골드).
+	- 무료만 있다. Robux 가 닿는 트레드밀은 만들지 않는다(골드를 간접적으로 파는 것이 된다).
+	- 자리 비움 제한을 두지 않는다. 가만히 서 있어도 받는다.
+	- "발판 위에 있는지"는 서버가 본 캐릭터 위치로 판단한다. 클라이언트가 보내는 값은 없다.
+	- 발판에서 내려오면 채우던 시간은 멈춘 채 남는다. 다시 올라오면 이어서 채운다(접속 중에만).
+	- 점검 모드에서는 시간이 가지 않는다(다른 골드 변동과 같이 멈춘다).
+
+	[미정 D18] 2단계 이상은 아직 없다. EconomyConfig.TREADMILL_TIERS 와 Config/World 의
+	TREADMILL_PADS 에 추가하면 이 서비스는 그대로 동작한다. 해금 조건이 생기면 padUnder 에서 확인한다.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Types = require(Shared:WaitForChild("Types"))
+local Remotes = require(Shared:WaitForChild("Remotes"))
+local TreadmillLogic = require(Shared:WaitForChild("Pure"):WaitForChild("TreadmillLogic"))
+
+local services = script.Parent
+local DataService = require(services:WaitForChild("DataService"))
+local EconomyService = require(services:WaitForChild("EconomyService"))
+local LiveOpsService = require(services:WaitForChild("LiveOpsService"))
+local WorldService = require(services:WaitForChild("WorldService"))
+
+local TreadmillService = {}
+TreadmillService.Name = "TreadmillService"
+
+-- 발판 위에 있는지 확인하는 주기(초)
+local TICK_SECONDS = 1
+
+-- 이번 지급까지 채운 시간(초). 접속 중에만 유지한다.
+local progress: { [Player]: number } = {}
+local wasOnPad: { [Player]: boolean } = {}
+
+local updateRemote: RemoteEvent? = nil
+
+local function send(player: Player, payload: Types.TreadmillUpdate)
+	if updateRemote then
+		updateRemote:FireClient(player, payload)
+	end
+end
+
+-- 플레이어가 올라가 있는 발판. 없으면 nil.
+local function padUnder(player: Player): WorldService.TreadmillPad?
+	local character = player.Character
+	if character == nil then
+		return nil
+	end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid == nil or humanoid.Health <= 0 then
+		return nil
+	end
+
+	local root = character:FindFirstChild("HumanoidRootPart")
+	if root == nil or not root:IsA("BasePart") then
+		return nil
+	end
+
+	local position = root.Position
+	for _, pad in WorldService.getTreadmillPads() do
+		if TreadmillLogic.isOnPad(position.X, position.Y, position.Z, pad.bounds) then
+			return pad
+		end
+	end
+	return nil
+end
+
+local function step(dt: number)
+	if LiveOpsService.isMaintenance() then
+		return
+	end
+
+	for player, data in DataService.getAllActive() do
+		local pad = padUnder(player)
+
+		if pad == nil then
+			if wasOnPad[player] then
+				wasOnPad[player] = nil
+				send(player, {
+					onPad = false,
+					progress = progress[player] or 0,
+					interval = 0,
+					gold = 0,
+					paid = 0,
+				})
+			end
+			continue
+		end
+
+		local tier = pad.tier
+		local rest, payouts =
+			TreadmillLogic.advance(progress[player] or 0, dt, tier.intervalSeconds)
+		progress[player] = rest
+		wasOnPad[player] = true
+
+		local paid = 0
+		if payouts > 0 then
+			paid = EconomyService.addGold(player, data, payouts * tier.gold, "treadmill")
+			DataService.replicate(player)
+		end
+
+		send(player, {
+			onPad = true,
+			progress = rest,
+			interval = tier.intervalSeconds,
+			gold = tier.gold,
+			paid = paid,
+		})
+	end
+end
+
+function TreadmillService.Init()
+	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
+	updateRemote = remotesFolder:WaitForChild(Remotes.Events.TreadmillUpdate) :: RemoteEvent
+end
+
+function TreadmillService.Start()
+	Players.PlayerRemoving:Connect(function(player)
+		progress[player] = nil
+		wasOnPad[player] = nil
+	end)
+
+	task.spawn(function()
+		local last = os.clock()
+
+		while true do
+			task.wait(TICK_SECONDS)
+
+			local now = os.clock()
+			local ok, err = xpcall(step, debug.traceback, now - last)
+			last = now
+
+			if not ok then
+				warn(`[TreadmillService] 처리 중 오류:\n{err}`)
+			end
+		end
+	end)
+end
+
+return TreadmillService
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="39">
+          <Properties>
+            <string name="Name">WorldService</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	WorldService — 로비 공간을 코드로 짓는다 (통합 기획서 4-4·6절, 10-3절).
+
+	미술 에셋이 없어서 블록으로만 짓는다: 바닥, 보이지 않는 벽, 스폰 지점, 모루 장식, 트레드밀 발판.
+	경주 코스는 판마다 RaceService 가 CourseBuilder 로 따로 짓고, 여기서는 코스를 담을 폴더만 만든다.
+
+	- Workspace 에 이미 "Lobby" 폴더가 있으면(개발자가 Studio 에서 직접 꾸민 경우) 새로 짓지 않고
+	  그 안의 Treadmills 폴더에서 발판을 찾아 쓴다. 발판 파트에는 TreadmillTier 속성(단계 id)이 있어야 한다.
+	- 캐릭터끼리는 서로 부딪치지 않게 한다. 트레드밀에서 남을 밀어내거나 출발선에서 서로 끼는 일을 막는다.
+	  (공식 문서 workspace/collisions 의 "Disable character collisions" 방식)
+	- 발판 위 글자는 서버가 붙이지 않는다. 언어가 플레이어마다 달라서 클라이언트(LobbyController)가 붙인다.
+
+	부트스트랩 맨 앞에서 Init 된다. 플레이어의 캐릭터가 나타나기 전에 바닥이 있어야 하기 때문이다.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+
+local ConfigFolder = Shared:WaitForChild("Config")
+local World = require(ConfigFolder:WaitForChild("World"))
+local EconomyConfig = require(ConfigFolder:WaitForChild("EconomyConfig"))
+
+local TreadmillLogic = require(Shared:WaitForChild("Pure"):WaitForChild("TreadmillLogic"))
+
+local WorldService = {}
+WorldService.Name = "WorldService"
+
+export type TreadmillPad = {
+	part: BasePart,
+	tier: EconomyConfig.TreadmillTier,
+	bounds: TreadmillLogic.Pad,
+}
+
+local COLOR_FLOOR = Color3.fromRGB(58, 52, 62)
+local COLOR_SPAWN = Color3.fromRGB(226, 142, 58)
+local COLOR_ANVIL = Color3.fromRGB(38, 36, 42)
+local COLOR_PAD = Color3.fromRGB(72, 168, 132)
+
+local rng = Random.new()
+
+local pads: { TreadmillPad } = {}
+local racesFolder: Folder? = nil
+local collisionGroupReady = false
+
+local function makePart(
+	parent: Instance,
+	name: string,
+	size: Vector3,
+	position: Vector3,
+	color: Color3
+): Part
+	local part = Instance.new("Part")
+	part.Name = name
+	part.Anchored = true
+	part.Size = size
+	part.Position = position
+	part.Color = color
+	part.Material = Enum.Material.SmoothPlastic
+	part.Parent = parent
+	return part
+end
+
+--------------------------------------------------------------------------------
+-- 캐릭터끼리 부딪치지 않게
+--------------------------------------------------------------------------------
+
+local function setupCollisionGroup()
+	local group = World.CHARACTER_COLLISION_GROUP
+
+	local ok, err = pcall(function()
+		if not Workspace:IsCollisionGroupRegistered(group) then
+			Workspace:RegisterCollisionGroup(group)
+		end
+		Workspace:CollisionGroupSetCollidable(group, group, false)
+	end)
+
+	if ok then
+		collisionGroupReady = true
+	else
+		-- 게임 진행에는 지장이 없다. 캐릭터끼리 부딪칠 뿐이다.
+		warn(`[WorldService] 충돌 그룹을 만들지 못했습니다: {err}`)
+	end
+end
+
+local function onCharacterDescendantAdded(descendant: Instance)
+	if collisionGroupReady and descendant:IsA("BasePart") then
+		descendant.CollisionGroup = World.CHARACTER_COLLISION_GROUP
+	end
+end
+
+local function onCharacterAdded(character: Model)
+	for _, descendant in character:GetDescendants() do
+		onCharacterDescendantAdded(descendant)
+	end
+	character.DescendantAdded:Connect(onCharacterDescendantAdded)
+end
+
+local function onPlayerAdded(player: Player)
+	player.CharacterAdded:Connect(onCharacterAdded)
+
+	local character = player.Character
+	if character then
+		onCharacterAdded(character)
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 로비 짓기
+--------------------------------------------------------------------------------
+
+local function buildWalls(parent: Instance)
+	local lobby = World.LOBBY
+	local halfX = lobby.sizeX / 2
+	local halfZ = lobby.sizeZ / 2
+	local height = lobby.wallHeight
+	local thickness = 2
+
+	local specs = {
+		{
+			name = "WallNorth",
+			size = Vector3.new(lobby.sizeX, height, thickness),
+			position = Vector3.new(0, height / 2, halfZ + thickness / 2),
+		},
+		{
+			name = "WallSouth",
+			size = Vector3.new(lobby.sizeX, height, thickness),
+			position = Vector3.new(0, height / 2, -halfZ - thickness / 2),
+		},
+		{
+			name = "WallEast",
+			size = Vector3.new(thickness, height, lobby.sizeZ),
+			position = Vector3.new(halfX + thickness / 2, height / 2, 0),
+		},
+		{
+			name = "WallWest",
+			size = Vector3.new(thickness, height, lobby.sizeZ),
+			position = Vector3.new(-halfX - thickness / 2, height / 2, 0),
+		},
+	}
+
+	for _, spec in specs do
+		local wall = makePart(parent, spec.name, spec.size, spec.position, COLOR_FLOOR)
+		wall.Transparency = 1
+		wall.CastShadow = false
+	end
+end
+
+local function buildSpawn(parent: Instance)
+	local lobby = World.LOBBY
+
+	local spawn = Instance.new("SpawnLocation")
+	spawn.Name = "LobbySpawn"
+	spawn.Anchored = true
+	spawn.Size = Vector3.new(lobby.spawnSize, 1, lobby.spawnSize)
+	spawn.Position = Vector3.new(lobby.spawnX, 0.5, lobby.spawnZ)
+	spawn.Color = COLOR_SPAWN
+	spawn.Material = Enum.Material.SmoothPlastic
+	spawn.Neutral = true
+	spawn.Duration = 0 -- 스폰 직후 보호막 없음
+	spawn.Parent = parent
+end
+
+-- 대장간 분위기를 내는 모루 모양 장식 (기능 없음)
+local function buildAnvil(parent: Instance)
+	local x, z = 0, 24
+
+	makePart(parent, "AnvilBase", Vector3.new(6, 1.5, 4), Vector3.new(x, 0.75, z), COLOR_ANVIL)
+	makePart(parent, "AnvilNeck", Vector3.new(3, 2, 2.5), Vector3.new(x, 2.5, z), COLOR_ANVIL)
+	local top =
+		makePart(parent, "AnvilTop", Vector3.new(9, 2, 4), Vector3.new(x, 4.5, z), COLOR_ANVIL)
+	top.Material = Enum.Material.Metal
+end
+
+local function buildTreadmills(parent: Instance)
+	local folder = Instance.new("Folder")
+	folder.Name = World.TREADMILL_FOLDER
+
+	local padSize = World.TREADMILL_PAD
+	local counts: { [string]: number } = {}
+
+	for _, spec in World.TREADMILL_PADS do
+		counts[spec.tierId] = (counts[spec.tierId] or 0) + 1
+
+		local part = makePart(
+			folder,
+			`Treadmill_{spec.tierId}_{counts[spec.tierId]}`,
+			Vector3.new(padSize.sizeX, padSize.height, padSize.sizeZ),
+			Vector3.new(spec.x, padSize.height / 2, spec.z),
+			COLOR_PAD
+		)
+		part.Material = Enum.Material.Neon
+		part:SetAttribute(World.TREADMILL_TIER_ATTRIBUTE, spec.tierId)
+	end
+
+	folder.Parent = parent
+end
+
+local function buildLobby(): Folder
+	local lobby = World.LOBBY
+
+	local folder = Instance.new("Folder")
+	folder.Name = World.LOBBY_FOLDER
+
+	makePart(
+		folder,
+		"Floor",
+		Vector3.new(lobby.sizeX, lobby.floorThickness, lobby.sizeZ),
+		Vector3.new(0, -lobby.floorThickness / 2, 0),
+		COLOR_FLOOR
+	)
+
+	buildWalls(folder)
+	buildSpawn(folder)
+	buildAnvil(folder)
+	buildTreadmills(folder)
+
+	folder.Parent = Workspace
+	return folder
+end
+
+-- 로비 폴더에서 트레드밀 발판을 찾아 목록으로 만든다(직접 지은 로비든 Studio 에서 꾸민 로비든 같다).
+local function collectPads(lobbyFolder: Instance)
+	pads = {}
+
+	local folder = lobbyFolder:FindFirstChild(World.TREADMILL_FOLDER)
+	if folder == nil then
+		warn(
+			"[WorldService] 로비에 Treadmills 폴더가 없습니다. 트레드밀이 동작하지 않습니다."
+		)
+		return
+	end
+
+	for _, child in folder:GetChildren() do
+		if not child:IsA("BasePart") then
+			continue
+		end
+
+		local tierId = child:GetAttribute(World.TREADMILL_TIER_ATTRIBUTE)
+		local tier = if type(tierId) == "string" then EconomyConfig.treadmillTier(tierId) else nil
+		if tier == nil then
+			warn(
+				`[WorldService] 트레드밀 발판 {child.Name} 의 단계를 알 수 없습니다`
+			)
+			continue
+		end
+
+		table.insert(pads, {
+			part = child,
+			tier = tier,
+			bounds = {
+				x = child.Position.X,
+				z = child.Position.Z,
+				sizeX = child.Size.X,
+				sizeZ = child.Size.Z,
+				topY = child.Position.Y + child.Size.Y / 2,
+				reach = World.TREADMILL_PAD.reach,
+			},
+		})
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 공개 함수
+--------------------------------------------------------------------------------
+
+function WorldService.getTreadmillPads(): { TreadmillPad }
+	return pads
+end
+
+-- 경주 코스를 담는 폴더 (Workspace/Races)
+function WorldService.getRacesFolder(): Folder
+	local folder = racesFolder
+	if folder == nil then
+		folder = Instance.new("Folder")
+		folder.Name = World.RACES_FOLDER
+		folder.Parent = Workspace
+		racesFolder = folder
+	end
+	return folder
+end
+
+-- 캐릭터를 로비 스폰 근처로 옮긴다. 캐릭터가 없으면 false.
+function WorldService.teleportToLobby(player: Player): boolean
+	local character = player.Character
+	if character == nil then
+		return false
+	end
+
+	local lobby = World.LOBBY
+	local scatter = lobby.spawnScatter
+
+	local position = Vector3.new(
+		lobby.spawnX + rng:NextNumber(-scatter, scatter),
+		1 + World.COURSE.spawnHeight,
+		lobby.spawnZ + rng:NextNumber(-scatter, scatter)
+	)
+
+	character:PivotTo(CFrame.new(position))
+	return true
+end
+
+function WorldService.Init()
+	setupCollisionGroup()
+
+	local existing = Workspace:FindFirstChild(World.LOBBY_FOLDER)
+	local lobbyFolder = if existing then existing else buildLobby()
+	collectPads(lobbyFolder)
+
+	WorldService.getRacesFolder()
+
+	print(`[WorldService] 로비 준비 완료 (트레드밀 발판 {#pads}개)`)
+end
+
+function WorldService.Start()
+	for _, player in Players:GetPlayers() do
+		onPlayerAdded(player)
+	end
+	Players.PlayerAdded:Connect(onPlayerAdded)
+end
+
+return WorldService
+]]></string>
+          </Properties>
+        </Item>
       </Item>
-      <Item class="Folder" referent="31">
+      <Item class="Folder" referent="40">
         <Properties>
           <string name="Name">vendor</string>
         </Properties>
-        <Item class="ModuleScript" referent="32">
+        <Item class="ModuleScript" referent="41">
           <Properties>
             <string name="Name">ProfileStore</string>
             <string name="Source">--[[
@@ -6813,26 +9793,26 @@ return ProfileStore</string>
       </Item>
     </Item>
   </Item>
-  <Item class="ServerStorage" referent="33">
+  <Item class="ServerStorage" referent="42">
     <Properties>
       <string name="Name">ServerStorage</string>
     </Properties>
   </Item>
-  <Item class="SoundService" referent="34">
+  <Item class="SoundService" referent="43">
     <Properties>
       <string name="Name">SoundService</string>
       <bool name="RespectFilteringEnabled">true</bool>
     </Properties>
   </Item>
-  <Item class="StarterPlayer" referent="35">
+  <Item class="StarterPlayer" referent="44">
     <Properties>
       <string name="Name">StarterPlayer</string>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="36">
+    <Item class="StarterPlayerScripts" referent="45">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="37">
+      <Item class="LocalScript" referent="46">
         <Properties>
           <string name="Name">Client</string>
           <string name="Source"><![CDATA[--!strict
@@ -6859,6 +9839,8 @@ local CONTROLLER_ORDER = {
 	"ShopController",
 	"SwordController",
 	"CollectionController",
+	"LobbyController",
+	"RaceController",
 	"UIController",
 }
 
@@ -6895,7 +9877,7 @@ runStage("Init", controllers)
 runStage("Start", controllers)
 ]]></string>
         </Properties>
-        <Item class="ModuleScript" referent="38">
+        <Item class="ModuleScript" referent="47">
           <Properties>
             <string name="Name">ClientState</string>
             <string name="Source"><![CDATA[--!strict
@@ -6923,6 +9905,10 @@ local liveOps: { maintenance: boolean, notice: string, event: any } = {
 }
 -- "방지권 사용" 스위치. 강화 요청에 실어 보내고, 화면의 확률 표시도 이 값에 따라 바뀐다.
 local useProtect = false
+-- 경주 화면이 떠 있는 동안(출발선 ~ 로비 복귀)은 대장간 화면을 숨긴다.
+local inRace = false
+-- 대장간 화면(무기·강화 버튼)을 펴 둘지. 접으면 로비를 돌아다니기 편하다.
+local forgeOpen = true
 local listeners: { () -> () } = {}
 
 local function notify()
@@ -6987,6 +9973,28 @@ function ClientState.isProtectActive(): boolean
 	return useProtect and data ~= nil and data.protectTickets > 0
 end
 
+function ClientState.isInRace(): boolean
+	return inRace
+end
+
+function ClientState.setInRace(value: boolean)
+	if inRace ~= value then
+		inRace = value
+		notify()
+	end
+end
+
+function ClientState.isForgeOpen(): boolean
+	return forgeOpen
+end
+
+function ClientState.setForgeOpen(value: boolean)
+	if forgeOpen ~= value then
+		forgeOpen = value
+		notify()
+	end
+end
+
 function ClientState.getLanguage(): string
 	if data and data.settings and data.settings.language then
 		return data.settings.language
@@ -7015,11 +10023,11 @@ return ClientState
 ]]></string>
           </Properties>
         </Item>
-        <Item class="Folder" referent="39">
+        <Item class="Folder" referent="48">
           <Properties>
             <string name="Name">controllers</string>
           </Properties>
-          <Item class="ModuleScript" referent="40">
+          <Item class="ModuleScript" referent="49">
             <Properties>
               <string name="Name">CollectionController</string>
               <string name="Source"><![CDATA[--!strict
@@ -7443,7 +10451,7 @@ return CollectionController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="41">
+          <Item class="ModuleScript" referent="50">
             <Properties>
               <string name="Name">EffectsController</string>
               <string name="Source"><![CDATA[--!strict
@@ -7620,7 +10628,7 @@ return EffectsController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="42">
+          <Item class="ModuleScript" referent="51">
             <Properties>
               <string name="Name">FeedController</string>
               <string name="Source"><![CDATA[--!strict
@@ -7658,6 +10666,7 @@ local OUTCOME_COLOR: { [string]: Color3 } = {
 	broadcast = Color3.fromRGB(180, 255, 190),
 }
 
+local feedGui: ScreenGui? = nil
 local container: Frame? = nil
 local toggleButton: TextButton? = nil
 local lineCount = 0
@@ -7754,6 +10763,7 @@ local function build()
 		layout()
 	end)
 
+	feedGui = gui
 	container = frame
 	toggleButton = toggle
 	layout()
@@ -7849,6 +10859,14 @@ function FeedController.Init()
 	if button then
 		button.Text = Locale.get(ClientState.getLanguage(), "ui.feedToggle")
 	end
+
+	-- 경주 화면이 떠 있는 동안에는 피드를 숨긴다(쌓인 줄은 로비로 돌아오면 다시 보인다).
+	ClientState.onChanged(function()
+		local screen = feedGui
+		if screen then
+			screen.Enabled = not ClientState.isInRace()
+		end
+	end)
 end
 
 function FeedController.Start()
@@ -7883,7 +10901,443 @@ return FeedController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="43">
+          <Item class="ModuleScript" referent="52">
+            <Properties>
+              <string name="Name">LobbyController</string>
+              <string name="Source"><![CDATA[--!strict
+--[[
+	LobbyController — 로비에서 쓰는 화면 (통합 기획서 4-1·4-4·6절).
+
+	- "경주 매칭" 버튼: 누르면 서버 대기열에 들어간다. 대기 중에는 "대기 취소"로 바뀌고
+	  출발까지 남은 시간과 대기 인원을 보여 준다.
+	- "대장간 접기/열기" 버튼: 무기·강화 패널을 접어서 로비를 돌아다니기 편하게 한다.
+	- 트레드밀: 발판 위에 안내 글자를 띄우고, 올라가 있는 동안 진행 상황을 보여 준다.
+
+	여기 있는 숫자 중 "착용 검의 최대 거리·최대 보상"은 서버와 같은 Pure/RaceLogic 함수로 계산한
+	안내용 값이다. 실제 거리·보상·트레드밀 수입은 전부 서버가 정한다.
+	경주 화면(출발선 ~ 결과)은 RaceController 가 맡는다.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Locale = require(Shared:WaitForChild("Locale"))
+local Remotes = require(Shared:WaitForChild("Remotes"))
+
+local Pure = Shared:WaitForChild("Pure")
+local Format = require(Pure:WaitForChild("Format"))
+local EnhanceLogic = require(Pure:WaitForChild("EnhanceLogic"))
+local RaceLogic = require(Pure:WaitForChild("RaceLogic"))
+
+local ConfigFolder = Shared:WaitForChild("Config")
+local EnhanceTable = require(ConfigFolder:WaitForChild("EnhanceTable"))
+local EconomyConfig = require(ConfigFolder:WaitForChild("EconomyConfig"))
+local RaceConfig = require(ConfigFolder:WaitForChild("RaceConfig"))
+local World = require(ConfigFolder:WaitForChild("World"))
+
+local controllers = script.Parent
+local ClientState = require(controllers.Parent:WaitForChild("ClientState"))
+local FeedController = require(controllers:WaitForChild("FeedController"))
+local SoundController = require(controllers:WaitForChild("SoundController"))
+
+local LobbyController = {}
+LobbyController.Name = "LobbyController"
+
+local COLOR_SUB = Color3.fromRGB(52, 46, 58)
+local COLOR_TEXT = Color3.fromRGB(240, 236, 230)
+local COLOR_MUTED = Color3.fromRGB(200, 194, 204)
+local COLOR_ACCENT = Color3.fromRGB(226, 142, 58)
+local COLOR_ERROR = Color3.fromRGB(255, 140, 130)
+local COLOR_GOLD = Color3.fromRGB(255, 208, 112)
+
+local NARROW_WIDTH = 700
+local BUTTON_WIDTH = 150
+local BUTTON_HEIGHT = 46 -- 최소 터치 영역 44px 이상
+
+local CURVE: RaceLogic.Curve = {
+	minTime = RaceConfig.MIN_TIME_SECONDS,
+	maxTime = RaceConfig.MAX_TIME_SECONDS,
+	maxLevel = EnhanceTable.MAX_LEVEL,
+	accel = RaceConfig.CHASER_ACCEL,
+	headStart = RaceConfig.HEAD_START,
+	baseSpeed = RaceConfig.BASE_SPEED,
+}
+
+local gui: ScreenGui
+local cluster: Frame
+local matchButton: TextButton
+local forgeButton: TextButton
+local statusLabel: TextLabel
+local treadmillLabel: TextLabel
+
+local joinRemote: RemoteFunction
+local leaveRemote: RemoteFunction
+
+local busy = false
+local queued = false
+local queueCount = 0
+local queueDeadline = 0 -- 출발 신호 예정 시각 (os.clock)
+
+local onPad = false
+local padProgress = 0
+local padInterval = 0
+local padGold = 0
+
+-- 발판 위 안내판: 발판 파트 → 글자 라벨
+local padLabels: { [Instance]: TextLabel } = {}
+
+local function makeButton(parent: Instance, order: number): TextButton
+	local button = Instance.new("TextButton")
+	button.BackgroundColor3 = COLOR_SUB
+	button.BorderSizePixel = 0
+	button.Font = Enum.Font.GothamBold
+	button.TextSize = 16
+	button.TextColor3 = COLOR_TEXT
+	button.Size = UDim2.fromOffset(BUTTON_WIDTH, BUTTON_HEIGHT)
+	button.LayoutOrder = order
+	button.Text = ""
+	button.Parent = parent
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 10)
+	corner.Parent = button
+
+	return button
+end
+
+local function makeLabel(parent: Instance, order: number, color: Color3): TextLabel
+	local label = Instance.new("TextLabel")
+	label.BackgroundColor3 = Color3.fromRGB(18, 16, 20)
+	label.BackgroundTransparency = 0.35
+	label.BorderSizePixel = 0
+	label.Font = Enum.Font.GothamMedium
+	label.TextSize = 14
+	label.TextColor3 = color
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextWrapped = true
+	label.Size = UDim2.fromOffset(BUTTON_WIDTH * 2 + 8, 40)
+	label.LayoutOrder = order
+	label.Text = ""
+	label.Parent = parent
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = label
+
+	local padding = Instance.new("UIPadding")
+	padding.PaddingLeft = UDim.new(0, 8)
+	padding.PaddingRight = UDim.new(0, 8)
+	padding.Parent = label
+
+	return label
+end
+
+-- 좁은 화면(세로 모바일)에서는 결과 피드가 위쪽을 차지하므로 그 아래에 둔다.
+local function applyLayout()
+	local camera = Workspace.CurrentCamera
+	if camera == nil or cluster == nil then
+		return
+	end
+
+	local isNarrow = camera.ViewportSize.X < NARROW_WIDTH
+	cluster.Position = UDim2.fromOffset(12, if isNarrow then 252 else 64)
+end
+
+local function build()
+	local player = Players.LocalPlayer
+
+	gui = Instance.new("ScreenGui")
+	gui.Name = "ForgeLobby"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 2
+	gui.Parent = player:WaitForChild("PlayerGui")
+
+	cluster = Instance.new("Frame")
+	cluster.Name = "Cluster"
+	cluster.BackgroundTransparency = 1
+	cluster.Size = UDim2.fromOffset(BUTTON_WIDTH * 2 + 8, 200)
+	cluster.Parent = gui
+
+	local list = Instance.new("UIListLayout")
+	list.FillDirection = Enum.FillDirection.Vertical
+	list.SortOrder = Enum.SortOrder.LayoutOrder
+	list.Padding = UDim.new(0, 6)
+	list.Parent = cluster
+
+	local row = Instance.new("Frame")
+	row.BackgroundTransparency = 1
+	row.Size = UDim2.fromOffset(BUTTON_WIDTH * 2 + 8, BUTTON_HEIGHT)
+	row.LayoutOrder = 1
+	row.Parent = cluster
+
+	local rowList = Instance.new("UIListLayout")
+	rowList.FillDirection = Enum.FillDirection.Horizontal
+	rowList.SortOrder = Enum.SortOrder.LayoutOrder
+	rowList.Padding = UDim.new(0, 8)
+	rowList.Parent = row
+
+	matchButton = makeButton(row, 1)
+	matchButton.BackgroundColor3 = COLOR_ACCENT
+	matchButton.TextColor3 = Color3.fromRGB(24, 18, 10)
+
+	forgeButton = makeButton(row, 2)
+	forgeButton.Font = Enum.Font.GothamMedium
+
+	statusLabel = makeLabel(cluster, 2, COLOR_MUTED)
+	treadmillLabel = makeLabel(cluster, 3, COLOR_GOLD)
+	treadmillLabel.Size = UDim2.fromOffset(BUTTON_WIDTH * 2 + 8, 28)
+	treadmillLabel.Visible = false
+
+	applyLayout()
+	local camera = Workspace.CurrentCamera
+	if camera then
+		camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyLayout)
+	end
+end
+
+-- 착용 검 레벨 기준 "최대 거리 · 최대 보상" 안내 문구
+local function raceInfoText(language: string): string
+	local sword = ClientState.getEquipped()
+	if sword == nil then
+		return ""
+	end
+
+	local level = sword.level
+	local maxDistance = RaceLogic.maxDistance(level, CURVE)
+
+	local odds = EnhanceTable.Odds[level]
+	local multiplier =
+		RaceLogic.rewardMultiplier(level, if odds then odds.success else 0, RaceConfig.Multiplier)
+	local cost =
+		EnhanceLogic.cost(level, 1, EnhanceTable.COST_BASE, EnhanceTable.SWORD_COUNT_EXPONENT)
+	local maxReward = RaceLogic.reward(cost, multiplier, maxDistance, maxDistance)
+
+	return Locale.get(
+		language,
+		"ui.race.info",
+		level,
+		Format.comma(math.floor(maxDistance)),
+		Format.comma(maxReward)
+	)
+end
+
+local function tierText(language: string, tierId: any): string
+	local tier = if type(tierId) == "string" then EconomyConfig.treadmillTier(tierId) else nil
+	if tier == nil then
+		return ""
+	end
+	return Locale.get(language, "ui.treadmill.label", tier.intervalSeconds, Format.comma(tier.gold))
+end
+
+local function render()
+	local language = ClientState.getLanguage()
+
+	-- 경주 화면이 떠 있는 동안에는 로비 버튼을 숨긴다.
+	gui.Enabled = not ClientState.isInRace()
+
+	matchButton.Text = Locale.get(language, if queued then "ui.race.cancel" else "ui.race.match")
+	matchButton.BackgroundColor3 = if queued then COLOR_SUB else COLOR_ACCENT
+	matchButton.TextColor3 = if queued then COLOR_TEXT else Color3.fromRGB(24, 18, 10)
+
+	forgeButton.Text =
+		Locale.get(language, if ClientState.isForgeOpen() then "ui.forge.hide" else "ui.forge.show")
+
+	if queued then
+		local secondsLeft = math.max(0, math.ceil(queueDeadline - os.clock()))
+		statusLabel.TextColor3 = COLOR_ACCENT
+		statusLabel.Text = Locale.get(language, "ui.race.queue", secondsLeft, queueCount)
+	else
+		statusLabel.TextColor3 = COLOR_MUTED
+		statusLabel.Text = raceInfoText(language)
+	end
+
+	treadmillLabel.Visible = onPad
+	if onPad then
+		treadmillLabel.Text = Locale.get(
+			language,
+			"ui.treadmill.progress",
+			math.floor(padProgress),
+			padInterval,
+			Format.comma(padGold)
+		)
+	end
+
+	for part, label in padLabels do
+		label.Text = tierText(language, part:GetAttribute(World.TREADMILL_TIER_ATTRIBUTE))
+	end
+end
+
+local function showError(reason: string)
+	FeedController.pushRaw(Locale.get(ClientState.getLanguage(), `error.{reason}`), COLOR_ERROR)
+end
+
+local function requestMatch()
+	if busy then
+		return
+	end
+	busy = true
+
+	local remote = if queued then leaveRemote else joinRemote
+	local ok, response = pcall(function()
+		return remote:InvokeServer()
+	end)
+
+	busy = false
+
+	if not ok or type(response) ~= "table" then
+		showError("unknown")
+		return
+	end
+	if response.ok ~= true then
+		showError(tostring(response.reason))
+	end
+	-- 대기열에 들어갔는지는 서버가 RaceUpdate(kind = "queue") 로 알려 준다.
+end
+
+-- 발판 위에 안내 글자를 띄운다. 글자는 플레이어 언어로 써야 해서 서버가 아니라 여기서 붙인다.
+local function attachPadLabel(part: Instance)
+	if not part:IsA("BasePart") or padLabels[part] ~= nil then
+		return
+	end
+
+	local billboard = Instance.new("BillboardGui")
+	billboard.Name = "TreadmillLabel"
+	billboard.Adornee = part
+	billboard.Size = UDim2.fromOffset(190, 52)
+	billboard.StudsOffset = Vector3.new(0, 7, 0)
+	billboard.AlwaysOnTop = false
+	billboard.MaxDistance = 140
+	billboard.ResetOnSpawn = false
+	billboard.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local label = Instance.new("TextLabel")
+	label.BackgroundColor3 = Color3.fromRGB(18, 16, 20)
+	label.BackgroundTransparency = 0.3
+	label.BorderSizePixel = 0
+	label.Size = UDim2.fromScale(1, 1)
+	label.Font = Enum.Font.GothamBold
+	label.TextSize = 15
+	label.TextColor3 = COLOR_GOLD
+	label.TextWrapped = true
+	label.Text = ""
+	label.Parent = billboard
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 8)
+	corner.Parent = label
+
+	padLabels[part] = label
+
+	part.Destroying:Connect(function()
+		padLabels[part] = nil
+		billboard:Destroy()
+	end)
+end
+
+local function watchTreadmills()
+	local lobby = Workspace:WaitForChild(World.LOBBY_FOLDER, 60)
+	local folder = if lobby then lobby:WaitForChild(World.TREADMILL_FOLDER, 60) else nil
+	if folder == nil then
+		warn("[LobbyController] 트레드밀 발판을 찾지 못했습니다")
+		return
+	end
+
+	for _, child in folder:GetChildren() do
+		attachPadLabel(child)
+	end
+	folder.ChildAdded:Connect(attachPadLabel)
+
+	render()
+end
+
+local function onRaceUpdate(payload: any)
+	if type(payload) ~= "table" then
+		return
+	end
+
+	if payload.kind == "queue" then
+		queued = payload.queued == true
+		queueCount = tonumber(payload.count) or 0
+		queueDeadline = os.clock() + (tonumber(payload.secondsLeft) or 0)
+		render()
+	elseif payload.kind == "lineup" or payload.kind == "lobby" then
+		-- 출발선에 섰거나 로비로 돌아왔다. 어느 쪽이든 대기는 끝났다.
+		queued = false
+		render()
+	end
+end
+
+local function onTreadmillUpdate(payload: any)
+	if type(payload) ~= "table" then
+		return
+	end
+
+	onPad = payload.onPad == true
+	padProgress = tonumber(payload.progress) or 0
+	padInterval = tonumber(payload.interval) or 0
+	padGold = tonumber(payload.gold) or 0
+
+	local paid = tonumber(payload.paid) or 0
+	if paid > 0 then
+		FeedController.pushRaw(
+			Locale.get(ClientState.getLanguage(), "ui.treadmill.paid", Format.comma(paid)),
+			COLOR_GOLD
+		)
+	end
+
+	render()
+end
+
+function LobbyController.Init()
+	build()
+
+	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
+	joinRemote = remotesFolder:WaitForChild(Remotes.Functions.JoinRace) :: RemoteFunction
+	leaveRemote = remotesFolder:WaitForChild(Remotes.Functions.LeaveRaceQueue) :: RemoteFunction
+
+	local raceRemote = remotesFolder:WaitForChild(Remotes.Events.RaceUpdate) :: RemoteEvent
+	raceRemote.OnClientEvent:Connect(onRaceUpdate)
+
+	local treadmillRemote =
+		remotesFolder:WaitForChild(Remotes.Events.TreadmillUpdate) :: RemoteEvent
+	treadmillRemote.OnClientEvent:Connect(onTreadmillUpdate)
+
+	matchButton.Activated:Connect(function()
+		SoundController.play("click")
+		task.spawn(requestMatch)
+	end)
+
+	forgeButton.Activated:Connect(function()
+		SoundController.play("click")
+		ClientState.setForgeOpen(not ClientState.isForgeOpen())
+	end)
+
+	ClientState.onChanged(render)
+	render()
+end
+
+function LobbyController.Start()
+	task.spawn(watchTreadmills)
+
+	-- 대기 중에는 남은 시간을 다시 그린다.
+	task.spawn(function()
+		while true do
+			task.wait(0.25)
+			if queued then
+				render()
+			end
+		end
+	end)
+end
+
+return LobbyController
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="53">
             <Properties>
               <string name="Name">OddsTableController</string>
               <string name="Source"><![CDATA[--!strict
@@ -8220,18 +11674,692 @@ return OddsTableController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="44">
+          <Item class="ModuleScript" referent="54">
+            <Properties>
+              <string name="Name">RaceController</string>
+              <string name="Source"><![CDATA[--!strict
+--[[
+	RaceController — 경주 화면 (통합 기획서 4절, 8절).
+
+	출발선에 선 순간부터 로비로 돌아올 때까지의 화면을 맡는다.
+	  출발 전   카운트다운
+	  달리는 중 지금 거리 / 내 최대 거리, 추격자와의 간격
+	  탈락 후   결과(순위·거리·보상), 관전(다른 사람 화면), "로비로" 버튼
+	  판 종료   최종 순위표
+
+	클라이언트는 표시만 한다.
+	- 화면의 "지금 거리"와 "추격자와의 간격"은 내 화면에 보이는 위치로 계산한 참고 값이다.
+	- 결과(인정 거리·순위·보상)는 전부 서버가 보낸 값을 그대로 보여 준다.
+	- 서버로 보내는 것은 "로비로" 요청 하나뿐이다. 거리나 위치는 보내지 않는다.
+
+	[미정 D16] 특수 능력 버튼은 능력이 정해지면 이 화면에 추가한다.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Locale = require(Shared:WaitForChild("Locale"))
+local Remotes = require(Shared:WaitForChild("Remotes"))
+local Format = require(Shared:WaitForChild("Pure"):WaitForChild("Format"))
+local World = require(Shared:WaitForChild("Config"):WaitForChild("World"))
+
+local controllers = script.Parent
+local ClientState = require(controllers.Parent:WaitForChild("ClientState"))
+local FeedController = require(controllers:WaitForChild("FeedController"))
+local SoundController = require(controllers:WaitForChild("SoundController"))
+
+local RaceController = {}
+RaceController.Name = "RaceController"
+
+local COLOR_PANEL = Color3.fromRGB(34, 30, 38)
+local COLOR_SUB = Color3.fromRGB(52, 46, 58)
+local COLOR_TEXT = Color3.fromRGB(240, 236, 230)
+local COLOR_MUTED = Color3.fromRGB(200, 194, 204)
+local COLOR_ACCENT = Color3.fromRGB(226, 142, 58)
+local COLOR_DANGER = Color3.fromRGB(255, 120, 108)
+local COLOR_GOLD = Color3.fromRGB(255, 208, 112)
+
+local TOUCH_MIN = 44
+local MAX_RANK_ROWS = 5
+local HUD_INTERVAL_SECONDS = 0.1
+local GO_TEXT_SECONDS = 1
+
+type Entrant = {
+	userId: number,
+	name: string,
+	level: number,
+	alive: boolean,
+}
+
+type RaceView = {
+	id: number,
+	originZ: number,
+	level: number,
+	maxDistance: number,
+	entrants: { Entrant }, -- 서버가 보낸 순서
+}
+
+-- none: 경주 중 아님 / lineup: 출발 전 / racing: 달리는 중 / out: 탈락(관전)
+local mode: "none" | "lineup" | "racing" | "out" = "none"
+local view: RaceView? = nil
+local goAt = 0 -- 출발 예정 시각 (os.clock)
+local startedAt = 0
+local spectateUserId: number? = nil
+local resultPayload: any = nil
+local finishedPayload: any = nil
+local returnAt = 0
+local chaserPart: BasePart? = nil
+
+local gui: ScreenGui
+local distanceLabel: TextLabel
+local gapLabel: TextLabel
+local countdownLabel: TextLabel
+local resultPanel: Frame
+local resultTitle: TextLabel
+local resultBody: TextLabel
+local nextButton: TextButton
+local lobbyButton: TextButton
+
+local lobbyRemote: RemoteFunction
+
+local function corner(parent: Instance, radius: number)
+	local instance = Instance.new("UICorner")
+	instance.CornerRadius = UDim.new(0, radius)
+	instance.Parent = parent
+end
+
+local function makeLabel(parent: Instance, props: { [string]: any }): TextLabel
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.BorderSizePixel = 0
+	label.Font = Enum.Font.GothamBold
+	label.TextColor3 = COLOR_TEXT
+	label.TextSize = 18
+	label.Text = ""
+	for key, value in props do
+		(label :: any)[key] = value
+	end
+	label.Parent = parent
+	return label
+end
+
+local function makeButton(parent: Instance, props: { [string]: any }): TextButton
+	local button = Instance.new("TextButton")
+	button.BackgroundColor3 = COLOR_SUB
+	button.BorderSizePixel = 0
+	button.Font = Enum.Font.GothamBold
+	button.TextColor3 = COLOR_TEXT
+	button.TextSize = 16
+	button.Text = ""
+	for key, value in props do
+		(button :: any)[key] = value
+	end
+	button.Parent = parent
+	corner(button, 10)
+	return button
+end
+
+local function build()
+	local player = Players.LocalPlayer
+
+	gui = Instance.new("ScreenGui")
+	gui.Name = "ForgeRace"
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = true
+	gui.DisplayOrder = 3
+	gui.Enabled = false
+	gui.Parent = player:WaitForChild("PlayerGui")
+
+	-- 위쪽 가운데: 거리와 추격자 간격
+	local top = Instance.new("Frame")
+	top.Name = "Top"
+	top.BackgroundColor3 = Color3.fromRGB(18, 16, 20)
+	top.BackgroundTransparency = 0.35
+	top.BorderSizePixel = 0
+	top.AnchorPoint = Vector2.new(0.5, 0)
+	top.Position = UDim2.new(0.5, 0, 0, 44)
+	top.Size = UDim2.fromOffset(300, 62)
+	top.Parent = gui
+	corner(top, 10)
+
+	distanceLabel = makeLabel(top, {
+		Size = UDim2.new(1, 0, 0, 32),
+		Position = UDim2.fromOffset(0, 2),
+		TextSize = 20,
+	})
+	gapLabel = makeLabel(top, {
+		Size = UDim2.new(1, 0, 0, 24),
+		Position = UDim2.fromOffset(0, 34),
+		TextSize = 15,
+		Font = Enum.Font.GothamMedium,
+		TextColor3 = COLOR_DANGER,
+	})
+
+	-- 가운데: 출발 카운트다운
+	countdownLabel = makeLabel(gui, {
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Position = UDim2.fromScale(0.5, 0.36),
+		Size = UDim2.fromOffset(320, 110),
+		TextSize = 84,
+		TextColor3 = COLOR_ACCENT,
+		Visible = false,
+	})
+
+	-- 아래쪽 가운데: 결과와 관전 조작
+	resultPanel = Instance.new("Frame")
+	resultPanel.Name = "Result"
+	resultPanel.BackgroundColor3 = COLOR_PANEL
+	resultPanel.BackgroundTransparency = 0.08
+	resultPanel.BorderSizePixel = 0
+	resultPanel.AnchorPoint = Vector2.new(0.5, 1)
+	resultPanel.Position = UDim2.new(0.5, 0, 1, -16)
+	resultPanel.Size = UDim2.new(0.9, 0, 0, 236)
+	resultPanel.Visible = false
+	resultPanel.Parent = gui
+	corner(resultPanel, 14)
+
+	local sizeConstraint = Instance.new("UISizeConstraint")
+	sizeConstraint.MaxSize = Vector2.new(380, math.huge)
+	sizeConstraint.Parent = resultPanel
+
+	local padding = Instance.new("UIPadding")
+	padding.PaddingTop = UDim.new(0, 12)
+	padding.PaddingBottom = UDim.new(0, 12)
+	padding.PaddingLeft = UDim.new(0, 14)
+	padding.PaddingRight = UDim.new(0, 14)
+	padding.Parent = resultPanel
+
+	resultTitle = makeLabel(resultPanel, {
+		Size = UDim2.new(1, 0, 0, 26),
+		TextSize = 20,
+		TextColor3 = COLOR_ACCENT,
+		TextXAlignment = Enum.TextXAlignment.Left,
+	})
+	resultBody = makeLabel(resultPanel, {
+		Size = UDim2.new(1, 0, 1, -(26 + 6 + TOUCH_MIN + 6)),
+		Position = UDim2.fromOffset(0, 32),
+		TextSize = 14,
+		Font = Enum.Font.GothamMedium,
+		TextColor3 = COLOR_MUTED,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextWrapped = true,
+	})
+
+	nextButton = makeButton(resultPanel, {
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 0, 1, 0),
+		Size = UDim2.new(0.5, -4, 0, TOUCH_MIN),
+		Font = Enum.Font.GothamMedium,
+	})
+	lobbyButton = makeButton(resultPanel, {
+		AnchorPoint = Vector2.new(1, 1),
+		Position = UDim2.new(1, 0, 1, 0),
+		Size = UDim2.new(0.5, -4, 0, TOUCH_MIN),
+		BackgroundColor3 = COLOR_ACCENT,
+		TextColor3 = Color3.fromRGB(24, 18, 10),
+	})
+end
+
+--------------------------------------------------------------------------------
+-- 참가자 · 관전
+--------------------------------------------------------------------------------
+
+local function findEntrant(userId: number?): Entrant?
+	local current = view
+	if current == nil or userId == nil then
+		return nil
+	end
+	for _, entrant in current.entrants do
+		if entrant.userId == userId then
+			return entrant
+		end
+	end
+	return nil
+end
+
+local function rootOf(player: Player?): BasePart?
+	local character = if player then player.Character else nil
+	local root = if character then character:FindFirstChild("HumanoidRootPart") else nil
+	if root and root:IsA("BasePart") then
+		return root
+	end
+	return nil
+end
+
+-- 카메라가 따라갈 사람을 정한다. nil 이면 나 자신.
+local function setCameraSubject(player: Player?)
+	local camera = Workspace.CurrentCamera
+	if camera == nil then
+		return
+	end
+
+	local target = player or Players.LocalPlayer
+	local character = target.Character
+	local humanoid = if character then character:FindFirstChildOfClass("Humanoid") else nil
+	if humanoid then
+		camera.CameraSubject = humanoid
+	end
+end
+
+-- 아직 달리고 있는 다른 사람 중 after 다음 사람을 고른다. 없으면 nil.
+local function nextAlive(after: number?): number?
+	local current = view
+	if current == nil then
+		return nil
+	end
+
+	local localId = Players.LocalPlayer.UserId
+	local entrants = current.entrants
+	local count = #entrants
+
+	local startIndex = 0
+	for index, entrant in entrants do
+		if entrant.userId == after then
+			startIndex = index
+			break
+		end
+	end
+
+	for offset = 1, count do
+		local entrant = entrants[(startIndex + offset - 1) % count + 1]
+		if
+			entrant.alive
+			and entrant.userId ~= localId
+			and Players:GetPlayerByUserId(entrant.userId) ~= nil
+		then
+			return entrant.userId
+		end
+	end
+	return nil
+end
+
+local function spectate(userId: number?)
+	spectateUserId = userId
+	setCameraSubject(if userId then Players:GetPlayerByUserId(userId) else nil)
+end
+
+--------------------------------------------------------------------------------
+-- 그리기
+--------------------------------------------------------------------------------
+
+local function findChaser(): BasePart?
+	local current = view
+	if current == nil then
+		return nil
+	end
+
+	local cached = chaserPart
+	if cached and cached.Parent ~= nil then
+		return cached
+	end
+
+	local races = Workspace:FindFirstChild(World.RACES_FOLDER)
+	local folder = if races
+		then races:FindFirstChild(`{World.RACE_FOLDER_PREFIX}{current.id}`)
+		else nil
+	local part = if folder then folder:FindFirstChild(World.CHASER_NAME) else nil
+
+	if part and part:IsA("BasePart") then
+		chaserPart = part
+		return part
+	end
+	return nil
+end
+
+local function resultText(language: string): string
+	local lines: { string } = {}
+
+	local result = resultPayload
+	if type(result) == "table" then
+		local distance = tonumber(result.distance) or 0
+		local maxDistance = tonumber(result.maxDistance) or 0
+		local ratio = if maxDistance > 0 then math.min(1, distance / maxDistance) else 0
+
+		table.insert(
+			lines,
+			Locale.get(
+				language,
+				"ui.race.result",
+				tonumber(result.racerCount) or 1,
+				tonumber(result.rank) or 1,
+				Format.comma(distance),
+				Format.ratio(ratio, 0)
+			)
+		)
+		table.insert(
+			lines,
+			Locale.get(language, "ui.race.reward", Format.comma(tonumber(result.reward) or 0))
+		)
+
+		local bonus = tonumber(result.bonus) or 0
+		if bonus > 0 then
+			table.insert(lines, Locale.get(language, "ui.race.bonus", Format.comma(bonus)))
+		end
+	end
+
+	local finished = finishedPayload
+	if type(finished) == "table" and type(finished.ranking) == "table" then
+		local secondsLeft = math.max(0, math.ceil(returnAt - os.clock()))
+		table.insert(lines, Locale.get(language, "ui.race.finished", secondsLeft))
+
+		for index, row in finished.ranking do
+			if index > MAX_RANK_ROWS then
+				break
+			end
+			if type(row) == "table" then
+				table.insert(
+					lines,
+					Locale.get(
+						language,
+						"ui.race.rankRow",
+						tonumber(row.rank) or index,
+						tostring(row.name),
+						tonumber(row.level) or 0,
+						Format.comma(tonumber(row.distance) or 0)
+					)
+				)
+			end
+		end
+	else
+		local watched = findEntrant(spectateUserId)
+		if watched then
+			table.insert(
+				lines,
+				Locale.get(language, "ui.race.spectating", watched.name, watched.level)
+			)
+		end
+	end
+
+	return table.concat(lines, "\n")
+end
+
+local function render()
+	local language = ClientState.getLanguage()
+	local current = view
+
+	gui.Enabled = mode ~= "none"
+	if mode == "none" or current == nil then
+		return
+	end
+
+	local now = os.clock()
+
+	-- 카운트다운 / 출발 표시
+	if mode == "lineup" then
+		countdownLabel.Visible = true
+		countdownLabel.Text = tostring(math.max(1, math.ceil(goAt - now)))
+	elseif mode == "racing" and now - startedAt < GO_TEXT_SECONDS then
+		countdownLabel.Visible = true
+		countdownLabel.Text = Locale.get(language, "ui.race.go")
+	else
+		countdownLabel.Visible = false
+	end
+
+	-- 거리와 추격자 간격. 관전 중이면 보고 있는 사람 기준.
+	local watchedPlayer = Players.LocalPlayer
+	local watchedMax = current.maxDistance
+	if mode == "out" and spectateUserId ~= nil then
+		local other = Players:GetPlayerByUserId(spectateUserId)
+		if other then
+			watchedPlayer = other
+			watchedMax = 0
+		end
+	end
+
+	local root = rootOf(watchedPlayer)
+	local chaser = findChaser()
+
+	if root then
+		local distance = math.max(0, math.floor(root.Position.Z - current.originZ))
+
+		if watchedMax > 0 then
+			distanceLabel.Text = Locale.get(
+				language,
+				"ui.race.distance",
+				Format.comma(distance),
+				Format.comma(math.floor(watchedMax))
+			)
+		else
+			distanceLabel.Text =
+				Locale.get(language, "ui.race.distanceOnly", Format.comma(distance))
+		end
+
+		if chaser then
+			local front = chaser.Position.Z + chaser.Size.Z / 2
+			local gap = math.max(0, math.floor(root.Position.Z - front))
+			gapLabel.Text = Locale.get(language, "ui.race.gap", Format.comma(gap))
+		else
+			gapLabel.Text = ""
+		end
+	else
+		distanceLabel.Text = ""
+		gapLabel.Text = ""
+	end
+
+	-- 결과 패널
+	resultPanel.Visible = mode == "out"
+	if mode == "out" then
+		resultTitle.Text = Locale.get(language, "ui.race.caught")
+		resultBody.Text = resultText(language)
+		nextButton.Text = Locale.get(language, "ui.race.next")
+		lobbyButton.Text = Locale.get(language, "ui.race.toLobby")
+
+		local canSwitch = finishedPayload == nil and nextAlive(spectateUserId) ~= nil
+		nextButton.Visible = canSwitch
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 서버 알림
+--------------------------------------------------------------------------------
+
+local function leaveRaceView()
+	mode = "none"
+	view = nil
+	spectateUserId = nil
+	resultPayload = nil
+	finishedPayload = nil
+	chaserPart = nil
+
+	setCameraSubject(nil)
+	ClientState.setInRace(false)
+	render()
+end
+
+local function onLineup(payload: any)
+	local entrants: { Entrant } = {}
+	if type(payload.entrants) == "table" then
+		for _, entry in payload.entrants do
+			if type(entry) == "table" and type(entry.userId) == "number" then
+				table.insert(entrants, {
+					userId = entry.userId,
+					name = tostring(entry.name),
+					level = tonumber(entry.level) or 0,
+					alive = true,
+				})
+			end
+		end
+	end
+
+	view = {
+		id = tonumber(payload.raceId) or 0,
+		originZ = tonumber(payload.originZ) or 0,
+		level = tonumber(payload.level) or 0,
+		maxDistance = tonumber(payload.maxDistance) or 0,
+		entrants = entrants,
+	}
+
+	mode = "lineup"
+	goAt = os.clock() + (tonumber(payload.countdown) or 0)
+	spectateUserId = nil
+	resultPayload = nil
+	finishedPayload = nil
+	chaserPart = nil
+
+	setCameraSubject(nil)
+	ClientState.setInRace(true)
+	render()
+end
+
+local function onRaceUpdate(payload: any)
+	if type(payload) ~= "table" then
+		return
+	end
+
+	local kind = payload.kind
+
+	if kind == "lineup" then
+		onLineup(payload)
+		return
+	elseif kind == "lobby" then
+		leaveRaceView()
+		return
+	end
+
+	-- 아래 알림은 지금 보고 있는 판의 것만 받는다.
+	local current = view
+	if current == nil or payload.raceId ~= current.id then
+		return
+	end
+
+	if kind == "start" then
+		if mode == "lineup" then
+			mode = "racing"
+			startedAt = os.clock()
+		end
+	elseif kind == "eliminated" then
+		local entrant = findEntrant(tonumber(payload.userId))
+		if entrant then
+			entrant.alive = false
+		end
+
+		-- 보고 있던 사람이 잡혔으면 다른 사람으로 넘어간다.
+		if mode == "out" and spectateUserId == payload.userId then
+			spectate(nextAlive(spectateUserId))
+		end
+	elseif kind == "result" then
+		mode = "out"
+		resultPayload = payload
+
+		local mine = findEntrant(Players.LocalPlayer.UserId)
+		if mine then
+			mine.alive = false
+		end
+
+		SoundController.play("fail")
+		FeedController.pushRaw(
+			Locale.get(
+				ClientState.getLanguage(),
+				"ui.race.rewardFeed",
+				Format.comma(tonumber(payload.reward) or 0),
+				Format.comma(tonumber(payload.distance) or 0)
+			),
+			COLOR_GOLD
+		)
+
+		spectate(nextAlive(nil))
+	elseif kind == "finished" then
+		finishedPayload = payload
+		returnAt = os.clock() + (tonumber(payload.returnIn) or 0)
+		if mode == "out" then
+			spectate(nil)
+		end
+	end
+
+	render()
+end
+
+local function requestLobby()
+	local ok, response = pcall(function()
+		return lobbyRemote:InvokeServer()
+	end)
+
+	if ok and type(response) == "table" and response.ok == true then
+		-- 서버도 kind = "lobby" 를 보내지만, 놓쳤을 때를 대비해 여기서도 화면을 닫는다.
+		leaveRaceView()
+		return
+	end
+
+	local reason = if ok and type(response) == "table" then tostring(response.reason) else "unknown"
+	FeedController.pushRaw(Locale.get(ClientState.getLanguage(), `error.{reason}`), COLOR_DANGER)
+end
+
+function RaceController.Init()
+	build()
+
+	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
+	lobbyRemote = remotesFolder:WaitForChild(Remotes.Functions.ReturnToLobby) :: RemoteFunction
+
+	local raceRemote = remotesFolder:WaitForChild(Remotes.Events.RaceUpdate) :: RemoteEvent
+	raceRemote.OnClientEvent:Connect(onRaceUpdate)
+
+	nextButton.Activated:Connect(function()
+		SoundController.play("click")
+		spectate(nextAlive(spectateUserId))
+		render()
+	end)
+
+	lobbyButton.Activated:Connect(function()
+		SoundController.play("click")
+		task.spawn(requestLobby)
+	end)
+
+	render()
+end
+
+function RaceController.Start()
+	-- 경주 화면이 떠 있는 동안 숫자를 다시 그린다.
+	task.spawn(function()
+		while true do
+			task.wait(HUD_INTERVAL_SECONDS)
+
+			if mode == "none" then
+				continue
+			end
+
+			-- 관전하던 사람이 나갔으면 다른 사람으로 넘어간다.
+			if mode == "out" and spectateUserId ~= nil and finishedPayload == nil then
+				if Players:GetPlayerByUserId(spectateUserId) == nil then
+					spectate(nextAlive(spectateUserId))
+				end
+			end
+
+			local ok, err = pcall(render)
+			if not ok then
+				warn(`[RaceController] 화면 갱신 오류: {err}`)
+			end
+		end
+	end)
+end
+
+return RaceController
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="55">
             <Properties>
               <string name="Name">ShopController</string>
               <string name="Source"><![CDATA[--!strict
 --[[
-	ShopController — 상점 화면.
+	ShopController — 상점 화면 (통합 기획서 7·8절).
+
+	위쪽: Robux 로 사는 방지권 상품 (확정 1개 / 확정 묶음 / 확률형)
+	아래쪽: 파편으로 하는 방지권 뽑기 (Robux 가 닿지 않는다)
 
 	클라이언트는 상품 ID 를 알지 못한다. "이 항목을 사고 싶다"는 키만 서버에 보내고,
-	실제 구매창은 서버가 띄운다. 지급도 전부 서버가 한다.
+	실제 구매창은 서버가 띄운다. 지급과 뽑기도 전부 서버가 한다.
 
-	상품이 아직 등록되지 않았으면(ID 가 0) 서버가 목록에서 빼기 때문에
-	여기서는 빈 목록 안내만 띄운다.
+	확률 공개 (로블록스 유료 확률형 정책, 기획서 P10):
+	- 확률형 상품과 파편 뽑기는 사기 전에 모든 결과와 확률(%, 합계 100)을 버튼 바로 아래에 항상 보여 준다.
+	  숨겨진 창이나 아이콘 뒤에 두지 않는다. 이 숫자는 서버가 보낸 값이다.
+	- 천장 포인트(꽝 3번이면 방지권 1개)는 규칙과 현재 점수를 함께 보여 주고,
+	  다음 꽝에서 천장이 차는 상태면 꽝 줄의 설명을 "방지권을 받는다"로 바꿔 보여 준다.
+
+	아직 등록되지 않았거나 내용이 비어 있는 상품은 서버가 목록에서 빼기 때문에 여기에는 오지 않는다.
+	유료 확률형이 제한된 유저에게는 서버가 확률형 상품을 보내지 않는다.
 ]]
 
 local Players = game:GetService("Players")
@@ -8241,9 +12369,14 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Locale = require(Shared:WaitForChild("Locale"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 
+local Pure = Shared:WaitForChild("Pure")
+local Format = require(Pure:WaitForChild("Format"))
+local DrawLogic = require(Pure:WaitForChild("DrawLogic"))
+
 local controllers = script.Parent
 local ClientState = require(controllers.Parent:WaitForChild("ClientState"))
 local FeedController = require(controllers:WaitForChild("FeedController"))
+local SoundController = require(controllers:WaitForChild("SoundController"))
 
 local ShopController = {}
 ShopController.Name = "ShopController"
@@ -8253,8 +12386,11 @@ local COLOR_SUB = Color3.fromRGB(52, 46, 58)
 local COLOR_TEXT = Color3.fromRGB(240, 236, 230)
 local COLOR_MUTED = Color3.fromRGB(168, 160, 172)
 local COLOR_ACCENT = Color3.fromRGB(226, 142, 58)
+local COLOR_DISABLED = Color3.fromRGB(72, 68, 76)
+local COLOR_ERROR = Color3.fromRGB(255, 140, 130)
 
 local TOUCH_MIN = 44
+local PERCENT_DECIMALS = 2
 
 local gui: ScreenGui
 local panel: Frame
@@ -8265,6 +12401,12 @@ local closeButton: TextButton
 
 local itemsRemote: RemoteFunction
 local promptRemote: RemoteFunction
+local shardRemote: RemoteFunction
+
+-- 서버가 마지막으로 보낸 상점 목록 (Types.ShopState). 아직 못 받았으면 nil.
+local shopState: any = nil
+local loading = false
+local drawing = false
 
 local function makeButton(parent: Instance, props: { [string]: any }): TextButton
 	local button = Instance.new("TextButton")
@@ -8287,13 +12429,97 @@ local function makeButton(parent: Instance, props: { [string]: any }): TextButto
 	return button
 end
 
--- 상품 한 줄에 쓸 이름. 방지권 개수를 함께 보여 준다.
-local function itemLabel(language: string, item: any): string
-	return Locale.get(language, `shop.{item.key}`, tonumber(item.ticketAmount) or 0)
+local function makeLine(text: string, color: Color3, order: number, height: number?): TextLabel
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.GothamMedium
+	label.TextSize = 14
+	label.TextColor3 = color
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.TextWrapped = true
+	label.Size = UDim2.new(1, 0, 0, height or 20)
+	label.Text = text
+	label.LayoutOrder = order
+	label.Parent = scroller
+	return label
 end
 
-local function refresh()
+local function showError(reason: string)
+	FeedController.pushRaw(Locale.get(ClientState.getLanguage(), `error.{reason}`), COLOR_ERROR)
+end
+
+-- 상품 한 줄에 쓸 이름. 확정형은 방지권 개수를 함께 보여 준다.
+local function itemLabel(language: string, item: any): string
+	return Locale.get(language, `shop.{tostring(item.key)}`, tonumber(item.ticketAmount) or 0)
+end
+
+--[[
+	결과 한 줄: "· 방지권 3개  10%" / "· 꽝 …  70%"
+	missKey 는 꽝 줄에 쓸 문구 키(유료는 천장 포인트 안내가 붙고, 파편 뽑기는 그냥 꽝이다).
+]]
+local function outcomeText(language: string, outcome: any, missKey: string, ...: any): string
+	local percent = Format.percent(tonumber(outcome.percent) or 0, PERCENT_DECIMALS)
+	local tickets = tonumber(outcome.tickets) or 0
+
+	if tickets > 0 then
+		return Locale.get(language, "shop.outcomeTickets", tickets, percent)
+	end
+
+	-- 꽝 줄은 문구마다 끼워 넣는 값이 달라서 확률을 뒤에 따로 붙인다.
+	return `{Locale.get(language, missKey, ...)}  {percent}`
+end
+
+local function requestPurchase(key: string)
+	local ok, response = pcall(function()
+		return promptRemote:InvokeServer(key)
+	end)
+
+	if not ok or type(response) ~= "table" then
+		showError("unknown")
+	elseif response.ok ~= true then
+		showError(tostring(response.reason))
+	end
+end
+
+local render: () -> ()
+
+local function requestShardDraw()
+	if drawing then
+		return
+	end
+	drawing = true
+	render()
+
+	local ok, response = pcall(function()
+		return shardRemote:InvokeServer()
+	end)
+
+	drawing = false
+
+	if not ok or type(response) ~= "table" then
+		showError("unknown")
+	elseif response.ok ~= true then
+		showError(tostring(response.reason))
+	else
+		-- 결과는 서버가 정한 값이다.
+		local language = ClientState.getLanguage()
+		local tickets = tonumber(response.tickets) or 0
+		if tickets > 0 then
+			SoundController.play("success")
+			FeedController.pushRaw(Locale.get(language, "shop.shardDrawWin", tickets), COLOR_ACCENT)
+		else
+			SoundController.play("keep")
+			FeedController.pushRaw(Locale.get(language, "shop.shardDrawMiss"), COLOR_MUTED)
+		end
+	end
+
+	render()
+end
+
+-- 마지막으로 받은 목록과 지금 내 데이터(천장 포인트, 파편)로 화면을 다시 그린다. 서버를 부르지 않는다.
+render = function()
 	local language = ClientState.getLanguage()
+	local data = ClientState.getData()
 
 	titleLabel.Text = Locale.get(language, "ui.shopTitle")
 	noticeLabel.Text = Locale.get(language, "shop.notice")
@@ -8305,44 +12531,136 @@ local function refresh()
 		end
 	end
 
-	local ok, items = pcall(function()
-		return itemsRemote:InvokeServer()
-	end)
-
-	if not ok or type(items) ~= "table" or #items == 0 then
-		local empty = Instance.new("TextLabel")
-		empty.BackgroundTransparency = 1
-		empty.Font = Enum.Font.GothamMedium
-		empty.TextSize = 15
-		empty.TextColor3 = COLOR_MUTED
-		empty.TextWrapped = true
-		empty.Size = UDim2.new(1, 0, 0, 40)
-		empty.Text = Locale.get(language, "ui.shopEmpty")
-		empty.Parent = scroller
+	local state = shopState
+	if type(state) ~= "table" then
+		makeLine(
+			Locale.get(language, if loading then "ui.loading" else "ui.shopEmpty"),
+			COLOR_MUTED,
+			1,
+			40
+		)
 		return
 	end
 
-	for index, item in items do
+	local items = if type(state.items) == "table" then state.items else {}
+	local shardDraw = if type(state.shardDraw) == "table" then state.shardDraw else nil
+
+	if #items == 0 and shardDraw == nil then
+		makeLine(Locale.get(language, "ui.shopEmpty"), COLOR_MUTED, 1, 40)
+		return
+	end
+
+	local order = 0
+	local function nextOrder(): number
+		order += 1
+		return order
+	end
+
+	local pityPerMiss = tonumber(state.pityPerMiss) or 1
+	local pityThreshold = tonumber(state.pityThreshold) or 0
+	local pityTickets = tonumber(state.pityTickets) or 0
+	local pityPoints = if data then data.pityPoints else 0
+
+	-- Robux 상품
+	if #items > 0 then
+		makeLine(Locale.get(language, "shop.sectionPaid"), COLOR_ACCENT, nextOrder(), 22)
+	end
+
+	for _, item in items do
+		if type(item) ~= "table" or type(item.key) ~= "string" then
+			continue
+		end
+
+		local key = item.key
 		local row = makeButton(scroller, {
 			Text = itemLabel(language, item),
-			LayoutOrder = index,
+			LayoutOrder = nextOrder(),
 		})
-
 		row.Activated:Connect(function()
-			task.spawn(function()
-				local success, response = pcall(function()
-					return promptRemote:InvokeServer(item.key)
-				end)
-
-				if success and type(response) == "table" and response.ok ~= true then
-					FeedController.pushRaw(
-						Locale.get(language, `error.{tostring(response.reason)}`),
-						COLOR_ACCENT
-					)
-				end
-			end)
+			SoundController.play("click")
+			task.spawn(requestPurchase, key)
 		end)
+
+		if item.kind == "random" and type(item.outcomes) == "table" then
+			-- 사기 전에 모든 결과와 확률을 보여 준다(합계 100%).
+			makeLine(Locale.get(language, "shop.oddsTitle"), COLOR_MUTED, nextOrder())
+
+			local pityNext = DrawLogic.isPityNext(pityPoints, pityPerMiss, pityThreshold)
+			for _, outcome in item.outcomes do
+				local text = if pityNext
+					then outcomeText(language, outcome, "shop.outcomeMissPity", pityTickets)
+					else outcomeText(language, outcome, "shop.outcomeMiss", pityPerMiss)
+				makeLine(text, COLOR_TEXT, nextOrder())
+			end
+
+			makeLine(
+				Locale.get(
+					language,
+					"shop.pity",
+					pityPoints,
+					pityThreshold,
+					pityPerMiss,
+					pityThreshold,
+					pityTickets
+				),
+				COLOR_ACCENT,
+				nextOrder(),
+				54
+			)
+		end
 	end
+
+	-- 파편 뽑기
+	if shardDraw ~= nil and type(shardDraw.outcomes) == "table" then
+		local cost = tonumber(shardDraw.cost) or 0
+		local shards = if data then data.shards else 0
+		local affordable = shards >= cost and not drawing
+
+		makeLine(Locale.get(language, "shop.sectionFree"), COLOR_ACCENT, nextOrder(), 22)
+
+		local row = makeButton(scroller, {
+			Text = Locale.get(language, "shop.shardDraw", cost),
+			LayoutOrder = nextOrder(),
+			BackgroundColor3 = if affordable then COLOR_SUB else COLOR_DISABLED,
+			TextColor3 = if affordable then COLOR_TEXT else COLOR_MUTED,
+			Active = affordable,
+			AutoButtonColor = affordable,
+		})
+		row.Activated:Connect(function()
+			if affordable then
+				SoundController.play("click")
+				task.spawn(requestShardDraw)
+			end
+		end)
+
+		makeLine(
+			Locale.get(language, "shop.shardOwned", Format.comma(shards)),
+			COLOR_MUTED,
+			nextOrder()
+		)
+		makeLine(Locale.get(language, "shop.oddsTitle"), COLOR_MUTED, nextOrder())
+		for _, outcome in shardDraw.outcomes do
+			makeLine(
+				outcomeText(language, outcome, "shop.outcomeMissFree"),
+				COLOR_TEXT,
+				nextOrder()
+			)
+		end
+	end
+end
+
+-- 서버에서 상점 목록을 다시 받아 온다.
+local function refresh()
+	loading = true
+	render()
+
+	local ok, state = pcall(function()
+		return itemsRemote:InvokeServer()
+	end)
+
+	loading = false
+	shopState = if ok and type(state) == "table" then state else nil
+	render()
 end
 
 local function build()
@@ -8370,11 +12688,11 @@ local function build()
 	panel.BorderSizePixel = 0
 	panel.AnchorPoint = Vector2.new(0.5, 0.5)
 	panel.Position = UDim2.fromScale(0.5, 0.5)
-	panel.Size = UDim2.new(0.9, 0, 0.72, 0)
+	panel.Size = UDim2.new(0.9, 0, 0.8, 0)
 	panel.Parent = gui
 
 	local sizeConstraint = Instance.new("UISizeConstraint")
-	sizeConstraint.MaxSize = Vector2.new(460, 560)
+	sizeConstraint.MaxSize = Vector2.new(460, 620)
 	sizeConstraint.Parent = panel
 
 	local corner = Instance.new("UICorner")
@@ -8456,6 +12774,14 @@ function ShopController.Init()
 	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
 	itemsRemote = remotesFolder:WaitForChild(Remotes.Functions.GetShopItems) :: RemoteFunction
 	promptRemote = remotesFolder:WaitForChild(Remotes.Functions.PromptPurchase) :: RemoteFunction
+	shardRemote = remotesFolder:WaitForChild(Remotes.Functions.ShardDraw) :: RemoteFunction
+
+	-- 천장 포인트나 파편이 바뀌면(구매·뽑기 직후) 열려 있는 상점을 바로 다시 그린다.
+	ClientState.onChanged(function()
+		if gui.Enabled then
+			render()
+		end
+	end)
 end
 
 function ShopController.Start() end
@@ -8464,7 +12790,7 @@ return ShopController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="45">
+          <Item class="ModuleScript" referent="56">
             <Properties>
               <string name="Name">SoundController</string>
               <string name="Source"><![CDATA[--!strict
@@ -8523,7 +12849,7 @@ return SoundController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="46">
+          <Item class="ModuleScript" referent="57">
             <Properties>
               <string name="Name">SwordController</string>
               <string name="Source"><![CDATA[--!strict
@@ -8974,7 +13300,7 @@ return SwordController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="47">
+          <Item class="ModuleScript" referent="58">
             <Properties>
               <string name="Name">UIController</string>
               <string name="Source"><![CDATA[--!strict
@@ -9420,6 +13746,15 @@ local function render()
 	local language = ClientState.getLanguage()
 	local data = ClientState.getData()
 
+	-- 경주 중에는 화면 전체를, 대장간을 접었을 때는 무기와 조작 패널만 숨긴다(재화 바는 남긴다).
+	gui.Enabled = not ClientState.isInRace()
+	local forgeOpen = ClientState.isForgeOpen()
+	centerFrame.Visible = forgeOpen
+	bottomPanel.Visible = forgeOpen
+	if not forgeOpen then
+		renamePanel.Visible = false
+	end
+
 	oddsTableButton.Text = Locale.get(language, "ui.oddsTable")
 	swordsButton.Text = Locale.get(language, "ui.swords")
 	shopButton.Text = Locale.get(language, "ui.shop")
@@ -9713,17 +14048,18 @@ return UIController
       </Item>
     </Item>
   </Item>
-  <Item class="TextChatService" referent="48">
+  <Item class="TextChatService" referent="59">
     <Properties>
       <string name="Name">TextChatService</string>
       <token name="ChatVersion">1</token>
     </Properties>
   </Item>
-  <Item class="Workspace" referent="49">
+  <Item class="Workspace" referent="60">
     <Properties>
       <string name="Name">Workspace</string>
       <bool name="FilteringEnabled">true</bool>
       <bool name="NeedsPivotMigration">false</bool>
+      <bool name="StreamingEnabled">false</bool>
     </Properties>
   </Item>
 </roblox>

@@ -27,6 +27,31 @@ t.describe("Locale 한국어/영어 대응", function()
 		end
 	end)
 
+	t.it(
+		"두 언어에서 값을 끼워 넣는 자리(%d, %s)의 종류와 순서가 같다",
+		function()
+			-- 순서가 다르면 숫자 자리에 글자가 들어가 문장이 깨진다.
+			local function placeholders(template: string): string
+				local found: { string } = {}
+				for spec in string.gmatch(string.gsub(template, "%%%%", ""), "%%[%d%.]*(%a)") do
+					table.insert(found, spec)
+				end
+				return table.concat(found, ",")
+			end
+
+			for key, value in ko do
+				local other = en[key]
+				if other ~= nil then
+					t.expectEqual(
+						placeholders(other),
+						placeholders(value),
+						`자리 표시가 다름: {key}`
+					)
+				end
+			end
+		end
+	)
+
 	t.it("빈 문자열인 키가 없다", function()
 		for key, value in ko do
 			t.expect(value ~= "", `한국어 값이 비어 있음: {key}`)
@@ -116,6 +141,7 @@ t.describe("실패 사유 문자열", function()
 		"banned",
 		"busy",
 		"filter_failed",
+		"in_race",
 		"invalid_argument",
 		"invalid_name",
 		"load_fail",
@@ -124,6 +150,7 @@ t.describe("실패 사유 문자열", function()
 		"no_more_swords",
 		"not_available",
 		"not_enough_gold",
+		"not_enough_shards",
 		"not_owned",
 		"not_ready",
 		"session_end",

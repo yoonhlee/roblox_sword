@@ -20,9 +20,13 @@ Remotes.Functions = {
 	GetState = "GetState", -- 접속 직후 현재 데이터 + 확률 조회 (복제 이벤트를 놓쳤을 때의 보정)
 	GetOdds = "GetOdds", -- 착용 검 기준 최종 확률 조회
 	GetLeaderboard = "GetLeaderboard", -- 랭킹 상위 목록
-	GetShopItems = "GetShopItems", -- 상점 목록 조회
+	GetShopItems = "GetShopItems", -- 상점 목록 조회 → Types.ShopState
 	PromptPurchase = "PromptPurchase", -- 구매창 띄우기 요청
+	ShardDraw = "ShardDraw", -- 파편으로 방지권 뽑기 1회 → Types.ShardDrawResponse
 	SetSetting = "SetSetting", -- 사운드/언어 설정 변경
+	JoinRace = "JoinRace", -- 경주 매칭 대기열에 들어가기
+	LeaveRaceQueue = "LeaveRaceQueue", -- 매칭 대기 취소
+	ReturnToLobby = "ReturnToLobby", -- 탈락 후 관전을 끝내고 로비로
 }
 
 -- RemoteEvent: 서버가 밀어 주는 것 (클라이언트→서버 방향은 원칙적으로 쓰지 않음)
@@ -30,6 +34,8 @@ Remotes.Events = {
 	DataChanged = "DataChanged", -- 프로필 변경분 복제
 	FeedMessage = "FeedMessage", -- 결과 피드 한 줄
 	LiveOpsChanged = "LiveOpsChanged", -- 이벤트/점검 상태 변경
+	RaceUpdate = "RaceUpdate", -- 경주 진행 알림 (Types.RaceUpdate)
+	TreadmillUpdate = "TreadmillUpdate", -- 트레드밀 진행 상태 (Types.TreadmillUpdate)
 }
 
 -- 서버 전용: 리모트 폴더와 인스턴스를 생성한다.
