@@ -176,8 +176,7 @@ stylua --check src tests tools
 
 ## 7. 미해결 · 대기 중
 
-- **기획 결정 대기 D1~D9**: `docs/기획서.md` 5절. 특히 D2(1구간 판매로 이익이 나는
-  1~4강 구멍)는 구현 전에 반드시 정해야 한다.
+- **기획 결정 대기**: `docs/기획서.md` 5절 (D2 는 P5 로 해결됨).
 - **Studio 실동작 확인 대기**: UI 렌더링, DataStore 저장, 채팅 명령어 등록.
   개발자가 Output 창 오류를 보내 주면 그걸 기준으로 고친다.
 - `rokit.toml` 버전 문자열 미검증 (cargo 로 확인한 실제 최신: rojo 7.7.0, selene 0.31.0, stylua 2.5.2).
