@@ -1,38 +1,31 @@
 --!strict
 --[[
-	Products — 게임패스 / 개발자 상품 ID.
+	Products — 개발자 상품(Robux 로 사는 것) ID.
 
 	[개발자 입력 필요] Roblox 크리에이터 대시보드에서 상품을 만든 뒤 여기 ID 를 채운다.
 	ID 가 0 이면 해당 상품은 UI 에 노출되지 않는다(ShopService 가 걸러 냄).
 
-	정책 주의: Robux 로 "확률 결과 자체"를 파는 상품(유료 강화권 뽑기 등)은 만들지 않는다.
-	그런 상품이 필요해지면 로블록스의 유료 랜덤 아이템 규정(구매 전 확률 공개)과
-	국내 확률형 아이템 표시 규정을 먼저 확인하고 개발자 승인을 받을 것.
+	지킬 것 (통합 기획서 6·7절):
+	- 유료 상품은 방지권뿐이다. 골드 팩·게임패스는 없다.
+	- 골드나 파편을 주는 상품, 골드 획득량을 늘리는 상품은 만들지 않는다.
+	  (Robux 로 살 수 있는 화폐로 하는 강화는 로블록스 정책상 유료 확률형 아이템이 된다.)
+	  그래서 상품 정의에는 방지권 개수(ticketAmount)만 있다.
+	- 유료 확률형은 "방지권 확률형" 1종만 승인됐고, 아직 구현하지 않았다.
 ]]
 
 local Products = {}
 
--- 게임패스: 편의/꾸미기 위주
-Products.GamePasses = {
-	goldBoost = 0, -- 골드 획득 +20%
-	extraSkinSlots = 0, -- 무기 외형 슬롯 확장
-	vipTag = 0, -- VIP 채팅 태그
-}
-
--- 개발자 상품: 재화/소모품
--- goldAmount / ticketAmount 는 지급량이며 서버에서만 사용한다.
+-- ticketAmount 는 지급량이며 서버에서만 사용한다.
 export type DeveloperProduct = {
 	key: string,
 	productId: number,
-	goldAmount: number,
 	ticketAmount: number,
 }
 
 Products.DeveloperProducts = {
-	goldSmall = { key = "goldSmall", productId = 0, goldAmount = 5000, ticketAmount = 0 },
-	goldMedium = { key = "goldMedium", productId = 0, goldAmount = 30000, ticketAmount = 0 },
-	goldLarge = { key = "goldLarge", productId = 0, goldAmount = 100000, ticketAmount = 0 },
-	ticketPack = { key = "ticketPack", productId = 0, goldAmount = 0, ticketAmount = 5 },
+	-- [미정 D12] 방지권 상품의 종류·개수·가격은 아직 정해지지 않았다.
+	-- 아래 5개 묶음은 프로토타입 때 넣은 임시값이다. ID 가 0 이라 상점에 보이지 않는다.
+	ticketPack = { key = "ticketPack", productId = 0, ticketAmount = 5 },
 } :: { [string]: DeveloperProduct }
 
 -- purchaseHistory 가 무한히 커지지 않도록 유지할 최근 기록 수

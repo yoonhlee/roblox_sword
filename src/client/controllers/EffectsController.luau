@@ -7,7 +7,7 @@
 
 	- 성공: 글자가 커지며 밝게 번쩍 + 위로 솟는 느낌
 	- 유지: 짧은 좌우 흔들림
-	- 파괴: 붉은 화면 번쩍 + 조각이 흩어지는 연출 + 화면 흔들림
+	- 실패(10강 복귀): 붉은 화면 번쩍 + 조각이 흩어지는 연출 + 화면 흔들림
 	- 보호: 푸른 방패 펄스
 ]]
 
@@ -138,7 +138,7 @@ end
 
 --[[
 	결과에 맞는 연출을 재생한다.
-	outcome: "success" | "keep" | "destroy" | "protected"
+	outcome: "success" | "keep" | "fail" | "protected"
 ]]
 function EffectsController.play(outcome: string)
 	if outcome == "success" then
@@ -146,7 +146,7 @@ function EffectsController.play(outcome: string)
 		flashScreen(Color3.fromRGB(255, 220, 150), 0.25)
 	elseif outcome == "keep" then
 		shake(6, 0.2)
-	elseif outcome == "destroy" then
+	elseif outcome == "fail" then
 		pulseLabel(BASE_TEXT_SIZE * 0.7, Color3.fromRGB(255, 120, 108))
 		flashScreen(Color3.fromRGB(255, 80, 70), 0.4)
 		burst(14, Color3.fromRGB(200, 190, 180))

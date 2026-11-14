@@ -14,15 +14,11 @@ Remotes.FOLDER_NAME = "Remotes"
 -- RemoteFunction: 클라이언트가 요청하고 결과를 기다리는 것
 Remotes.Functions = {
 	Enhance = "Enhance", -- 강화 1회 요청 → Types.EnhanceResponse
-	SellWeapon = "SellWeapon", -- 무기 판매 → 골드 지급
-	BuyProtectTicket = "BuyProtectTicket", -- 파편 → 방지권 교환
-	RenameWeapon = "RenameWeapon", -- 무기 이름 변경(필터링 후 저장)
+	RenameWeapon = "RenameWeapon", -- 착용 검 이름 변경(필터링 후 저장)
+	EquipSword = "EquipSword", -- 착용 검 바꾸기 → Types.EquipResponse
+	BuySwordSlot = "BuySwordSlot", -- 소지 상한 1칸 구매 + 새 검 뽑기 1회 → Types.DrawResponse
 	GetState = "GetState", -- 접속 직후 현재 데이터 + 확률 조회 (복제 이벤트를 놓쳤을 때의 보정)
-	GetOdds = "GetOdds", -- 현재 레벨 기준 최종 확률표 조회
-	GetBattleTargets = "GetBattleTargets", -- 같은 서버에서 도전할 수 있는 상대 목록
-	ChallengeBattle = "ChallengeBattle", -- 배틀 도전 신청
-	RespondBattle = "RespondBattle", -- 도전 수락/거절
-	GetCodex = "GetCodex", -- 도감/업적 현황
+	GetOdds = "GetOdds", -- 착용 검 기준 최종 확률 조회
 	GetLeaderboard = "GetLeaderboard", -- 랭킹 상위 목록
 	GetShopItems = "GetShopItems", -- 상점 목록 조회
 	PromptPurchase = "PromptPurchase", -- 구매창 띄우기 요청
@@ -32,8 +28,6 @@ Remotes.Functions = {
 -- RemoteEvent: 서버가 밀어 주는 것 (클라이언트→서버 방향은 원칙적으로 쓰지 않음)
 Remotes.Events = {
 	DataChanged = "DataChanged", -- 프로필 변경분 복제
-	BattleInvite = "BattleInvite", -- 도전 도착 알림
-	BattleResolved = "BattleResolved", -- 배틀 결과 연출용
 	FeedMessage = "FeedMessage", -- 결과 피드 한 줄
 	LiveOpsChanged = "LiveOpsChanged", -- 이벤트/점검 상태 변경
 }

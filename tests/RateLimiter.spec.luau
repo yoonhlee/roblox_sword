@@ -8,8 +8,8 @@ local function makeClock()
 	return function(): number
 		return now
 	end, function(delta: number)
-			now += delta
-		end
+		now += delta
+	end
 end
 
 t.describe("RateLimiter.consume", function()
@@ -47,7 +47,11 @@ t.describe("RateLimiter.consume", function()
 		end
 
 		advance(1.01)
-		t.expectEqual(limiter:consume(1), true, "거절된 요청이 다음 창까지 영향을 주면 안 된다")
+		t.expectEqual(
+			limiter:consume(1),
+			true,
+			"거절된 요청이 다음 창까지 영향을 주면 안 된다"
+		)
 	end)
 
 	t.it("플레이어끼리 서로 영향을 주지 않는다", function()

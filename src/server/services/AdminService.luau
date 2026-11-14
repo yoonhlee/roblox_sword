@@ -36,7 +36,6 @@ local DataService = require(services:WaitForChild("DataService"))
 local EconomyService = require(services:WaitForChild("EconomyService"))
 local AnalyticsService = require(services:WaitForChild("AnalyticsService"))
 local LiveOpsService = require(services:WaitForChild("LiveOpsService"))
-local BattleService = require(services:WaitForChild("BattleService"))
 
 local AdminService = {}
 AdminService.Name = "AdminService"
@@ -65,8 +64,26 @@ local function reply(player: Player, text: string)
 	feedRemote:FireClient(player, { kind = "system", text = text })
 end
 
+-- 닉네임으로 접속 중인 플레이어를 찾는다. 정확히 일치하는 사람이 먼저고, 없으면 부분 일치.
 local function findPlayer(name: string): Player?
-	return BattleService.findTargetByName(name)
+	local lowered = string.lower(name)
+
+	for _, player in Players:GetPlayers() do
+		if string.lower(player.Name) == lowered or string.lower(player.DisplayName) == lowered then
+			return player
+		end
+	end
+
+	for _, player in Players:GetPlayers() do
+		if
+			string.find(string.lower(player.Name), lowered, 1, true)
+			or string.find(string.lower(player.DisplayName), lowered, 1, true)
+		then
+			return player
+		end
+	end
+
+	return nil
 end
 
 --------------------------------------------------------------------------------
@@ -110,14 +127,17 @@ local function cmdGold(admin: Player, arguments: { string })
 	end
 
 	if amount >= 0 then
-		EconomyService.addGold(target, data, amount, "admin_grant", false)
+		EconomyService.addGold(target, data, amount, "admin_grant")
 	else
 		-- 회수는 가진 만큼만
 		EconomyService.spendGold(target, data, math.min(-amount, data.gold), "admin_revoke")
 	end
 
 	DataService.replicate(target)
-	reply(admin, `{target.Name} 골드 {Format.comma(amount)} 처리. 현재 {Format.comma(data.gold)}`)
+	reply(
+		admin,
+		`{target.Name} 골드 {Format.comma(amount)} 처리. 현재 {Format.comma(data.gold)}`
+	)
 	record(admin, `골드 {amount} → {target.Name}({target.UserId})`)
 end
 
@@ -128,7 +148,12 @@ local function cmdLevel(admin: Player, arguments: { string })
 	end
 
 	local level = tonumber(arguments[3])
-	if level == nil or level ~= math.floor(level) or level < 0 or level > EnhanceTable.MAX_LEVEL then
+	if
+		level == nil
+		or level ~= math.floor(level)
+		or level < 0
+		or level > EnhanceTable.MAX_LEVEL
+	then
 		reply(admin, `레벨은 0 ~ {EnhanceTable.MAX_LEVEL} 사이 정수여야 한다.`)
 		return
 	end
@@ -139,13 +164,23 @@ local function cmdLevel(admin: Player, arguments: { string })
 		return
 	end
 
-	data.weapon.level = level
+	-- 착용 중인 검의 레벨을 바꾼다. (도감 구간 기록은 건드리지 않는다)
+	local sword = data.swords[data.equippedId]
+	if sword == nil then
+		reply(admin, "그 사람의 착용 검을 찾지 못했다.")
+		return
+	end
+
+	sword.level = level
+	if level > sword.bestLevel then
+		sword.bestLevel = level
+	end
 	if level > data.stats.highestLevel then
 		data.stats.highestLevel = level
 	end
 
 	DataService.replicate(target)
-	reply(admin, `{target.Name} 레벨을 +{level} 로 설정.`)
+	reply(admin, `{target.Name} 착용 검({sword.id}) 레벨을 +{level} 로 설정.`)
 	record(admin, `레벨 {level} → {target.Name}({target.UserId})`)
 end
 
@@ -232,12 +267,19 @@ local function cmdInfo(admin: Player, arguments: { string })
 		return
 	end
 
+	local equipped = data.swords[data.equippedId]
+	local swordCount = 0
+	for _ in data.swords do
+		swordCount += 1
+	end
+
 	reply(
 		admin,
-		`{target.Name} — +{data.weapon.level} · 골드 {Format.comma(data.gold)}`
+		`{target.Name} — {data.equippedId} +{if equipped then equipped.level else 0}`
+			.. ` · 검 {swordCount}자루 · 골드 {Format.comma(data.gold)}`
 			.. ` · 파편 {Format.comma(data.shards)} · 방지권 {data.protectTickets}`
-			.. ` · 시도 {data.stats.enhanceTries} · 파괴 {data.stats.destroyed}`
-			.. ` · 최고 +{data.stats.highestLevel} · 레이팅 {data.stats.rating}`
+			.. ` · 시도 {data.stats.enhanceTries} · 실패 {data.stats.destroyed}`
+			.. ` · 최고 +{data.stats.highestLevel}`
 			.. ` · 스키마 v{data.schemaVersion}`
 	)
 	record(admin, `정보 조회 → {target.Name}({target.UserId})`)
@@ -254,7 +296,12 @@ local function cmdMaintenance(admin: Player, arguments: { string })
 
 	task.spawn(function()
 		local saved = LiveOpsService.setMaintenance(enabled)
-		reply(admin, `점검 모드 {if enabled then "켜짐" else "꺼짐"}{if saved then "" else " (저장 실패, 이 서버에만 적용)"}`)
+		reply(
+			admin,
+			`점검 모드 {if enabled then "켜짐" else "꺼짐"}{if saved
+				then ""
+				else " (저장 실패, 이 서버에만 적용)"}`
+		)
 	end)
 
 	record(admin, `점검 {tostring(enabled)}`)
@@ -280,7 +327,9 @@ local function cmdEvent(admin: Player, arguments: { string })
 		local saved = LiveOpsService.setEvent(event)
 		reply(
 			admin,
-			`이벤트 시작: 성공 +{event.successBuff}%p, {minutes}분{if saved then "" else " (저장 실패)"}`
+			`이벤트 시작: 성공 +{event.successBuff}%p, {minutes}분{if saved
+				then ""
+				else " (저장 실패)"}`
 		)
 	end)
 
@@ -342,7 +391,8 @@ local HANDLERS: { [string]: Handler } = {
 	["audit"] = cmdAudit,
 }
 
-local HELP = "/관리 골드|레벨|방지권|차단|정보 <닉네임> <값> · 점검 켜기|끄기 · 이벤트 <%p> <분> · 이벤트끄기 · 이상기록 · 기록"
+local HELP =
+	"/관리 골드|레벨|방지권|차단|정보 <닉네임> <값> · 점검 켜기|끄기 · 이벤트 <%p> <분> · 이벤트끄기 · 이상기록 · 기록"
 
 --------------------------------------------------------------------------------
 

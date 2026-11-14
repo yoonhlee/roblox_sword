@@ -2,11 +2,14 @@
 --[[
 	OddsTableController — 확률표 화면.
 
-	강화 화면에서 언제든 열 수 있어야 한다(지시서 7절: 확률표는 상품 여부와
-	관계없이 항상 열람 가능). 표시하는 값은 shared/Config/EnhanceTable 그대로다.
+	강화 화면에서 언제든 열 수 있어야 한다(확률표는 상품 여부와 관계없이 항상 열람 가능).
 
-	이벤트 버프가 적용 중이면 상단에 배너로 알려 주고, 실제 적용된 최종 확률은
-	강화 화면(서버가 내려 준 값)에서 확인하도록 안내한다.
+	표에 보이는 값은 "지금 실제로 적용되는" 최종 확률과 비용이다.
+	  - 기본값: shared/Config/EnhanceTable
+	  - 확률 버프 이벤트가 있으면 성공 + / 유지 - (실패는 그대로)
+	  - 방지권을 켜 두었고 방지권이 있으면 실패 0%, 그만큼 유지
+	  - 비용에는 가진 검 수 할증이 들어간다
+	서버가 쓰는 것과 같은 Pure/EnhanceLogic 함수로 계산하므로 실제 판정과 어긋나지 않는다.
 ]]
 
 local Players = game:GetService("Players")
@@ -17,6 +20,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Locale = require(Shared:WaitForChild("Locale"))
 local Format = require(Shared:WaitForChild("Pure"):WaitForChild("Format"))
 local EnhanceTable = require(Shared:WaitForChild("Config"):WaitForChild("EnhanceTable"))
+local EnhanceLogic = require(Shared:WaitForChild("Pure"):WaitForChild("EnhanceLogic"))
 
 local ClientState = require(script.Parent.Parent:WaitForChild("ClientState"))
 
@@ -31,13 +35,15 @@ local COLOR_MUTED = Color3.fromRGB(168, 160, 172)
 local COLOR_ACCENT = Color3.fromRGB(226, 142, 58)
 
 local ROW_HEIGHT = 26
-local COLUMN_WIDTHS = { 0.13, 0.17, 0.17, 0.17, 0.18, 0.18 }
+local HEADER_TOP = 86 -- 제목, 이벤트 줄, 방지권 안내 아래
+local COLUMN_WIDTHS = { 0.16, 0.2, 0.2, 0.2, 0.24 }
 
 local gui: ScreenGui
 local panel: Frame
 local scroller: ScrollingFrame
 local titleLabel: TextLabel
 local eventLabel: TextLabel
+local noteLabel: TextLabel
 local closeButton: TextButton
 local rows: { [number]: Frame } = {}
 
@@ -153,11 +159,24 @@ local function build()
 	eventLabel.Visible = false
 	eventLabel.Parent = panel
 
+	-- 방지권이 확률을 어떻게 바꾸는지 숫자로 적어 둔다.
+	noteLabel = Instance.new("TextLabel")
+	noteLabel.BackgroundTransparency = 1
+	noteLabel.Font = Enum.Font.GothamMedium
+	noteLabel.TextSize = 12
+	noteLabel.TextColor3 = COLOR_MUTED
+	noteLabel.TextXAlignment = Enum.TextXAlignment.Left
+	noteLabel.TextWrapped = true
+	noteLabel.Size = UDim2.new(1, 0, 0, 30)
+	noteLabel.Position = UDim2.fromOffset(0, 52)
+	noteLabel.Text = ""
+	noteLabel.Parent = panel
+
 	-- 헤더
 	local header = Instance.new("Frame")
 	header.BackgroundTransparency = 1
 	header.Size = UDim2.new(1, 0, 0, ROW_HEIGHT)
-	header.Position = UDim2.fromOffset(0, 54)
+	header.Position = UDim2.fromOffset(0, HEADER_TOP)
 	header.Parent = panel
 
 	local headerList = Instance.new("UIListLayout")
@@ -169,8 +188,8 @@ local function build()
 	scroller = Instance.new("ScrollingFrame")
 	scroller.BackgroundTransparency = 1
 	scroller.BorderSizePixel = 0
-	scroller.Position = UDim2.fromOffset(0, 54 + ROW_HEIGHT + 4)
-	scroller.Size = UDim2.new(1, 0, 1, -(54 + ROW_HEIGHT + 4))
+	scroller.Position = UDim2.fromOffset(0, HEADER_TOP + ROW_HEIGHT + 4)
+	scroller.Size = UDim2.new(1, 0, 1, -(HEADER_TOP + ROW_HEIGHT + 4))
 	scroller.CanvasSize = UDim2.new(0, 0, 0, 0)
 	scroller.AutomaticCanvasSize = Enum.AutomaticSize.Y
 	scroller.ScrollBarThickness = 4
@@ -195,9 +214,8 @@ local function build()
 		"ui.column.level",
 		"ui.column.success",
 		"ui.column.keep",
-		"ui.column.destroy",
+		"ui.column.fail",
 		"ui.column.cost",
-		"ui.column.sell",
 	}
 	for index, key in headers do
 		makeCell(header, index, Locale.get(language, key), COLOR_MUTED)
@@ -210,19 +228,27 @@ end
 
 local function refresh()
 	local language = ClientState.getLanguage()
-	local data = ClientState.getData()
-	local currentLevel = if data then data.weapon.level else -1
+	local sword = ClientState.getEquipped()
+	local currentLevel = if sword then sword.level else -1
+	local swordCount = ClientState.getSwordCount()
 
 	titleLabel.Text = Locale.get(language, "ui.oddsTableTitle")
 	closeButton.Text = Locale.get(language, "ui.close")
+	noteLabel.Text = Locale.get(language, "ui.protectNote")
 
-	local odds = ClientState.getOdds()
-	if odds and odds.eventName then
+	-- 진행 중인 확률 버프 이벤트 (성공 +, 그만큼 유지 -, 실패는 그대로)
+	local event = ClientState.getLiveOps().event
+	local buff = 0
+	if type(event) == "table" and type(event.successBuff) == "number" then
+		buff = event.successBuff
 		eventLabel.Visible = true
-		eventLabel.Text = Locale.get(language, "ui.eventActive", Locale.get(language, odds.eventName))
+		eventLabel.Text =
+			Locale.get(language, "ui.eventActive", Locale.get(language, tostring(event.nameKey)))
 	else
 		eventLabel.Visible = false
 	end
+
+	local protectActive = ClientState.isProtectActive()
 
 	for level = 0, EnhanceTable.MAX_LEVEL do
 		local row = rows[level]
@@ -238,27 +264,38 @@ local function refresh()
 		row.BackgroundColor3 = if isCurrent then COLOR_ROW_CURRENT else COLOR_ROW
 		local textColor = if isCurrent then COLOR_ACCENT else COLOR_TEXT
 
-		local entry = EnhanceTable.Odds[level]
+		local base = EnhanceTable.Odds[level]
 		makeCell(row, 1, Format.level(level), textColor)
 
-		if entry then
+		if base then
+			-- 화면에 보이는 값은 "지금 실제로 적용되는" 최종 확률이다.
+			local entry = EnhanceLogic.applyBuff(base, buff)
+			if protectActive then
+				entry = EnhanceLogic.applyProtect(entry)
+			end
+
+			local cost = EnhanceLogic.cost(
+				level,
+				swordCount,
+				EnhanceTable.COST_BASE,
+				EnhanceTable.SWORD_COUNT_EXPONENT
+			)
+
 			makeCell(row, 2, Format.percent(entry.success), textColor)
 			makeCell(row, 3, Format.percent(entry.keep), COLOR_MUTED)
 			makeCell(
 				row,
 				4,
-				Format.percent(entry.destroy),
-				if entry.destroy > 0 then Color3.fromRGB(255, 130, 118) else COLOR_MUTED
+				Format.percent(entry.fail),
+				if entry.fail > 0 then Color3.fromRGB(255, 130, 118) else COLOR_MUTED
 			)
-			makeCell(row, 5, Format.comma(entry.cost), COLOR_MUTED)
+			makeCell(row, 5, Format.comma(cost), COLOR_MUTED)
 		else
 			makeCell(row, 2, "-", COLOR_MUTED)
 			makeCell(row, 3, "-", COLOR_MUTED)
 			makeCell(row, 4, "-", COLOR_MUTED)
 			makeCell(row, 5, "-", COLOR_MUTED)
 		end
-
-		makeCell(row, 6, Format.comma(EnhanceTable.SellValue[level] or 0), COLOR_MUTED)
 	end
 end
 

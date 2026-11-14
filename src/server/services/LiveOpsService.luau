@@ -58,7 +58,9 @@ local store: DataStore? = nil
 local changedRemote: RemoteEvent? = nil
 
 local function storeName(): string
-	local base = if RunService:IsStudio() then GameConfig.DATASTORE_DEV else GameConfig.DATASTORE_PROD
+	local base = if RunService:IsStudio()
+		then GameConfig.DATASTORE_DEV
+		else GameConfig.DATASTORE_PROD
 	return `{base}_LiveOps`
 end
 

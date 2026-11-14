@@ -33,7 +33,6 @@ local Format = require(Shared:WaitForChild("Pure"):WaitForChild("Format"))
 local services = script.Parent
 local DataService = require(services:WaitForChild("DataService"))
 local EnhanceService = require(services:WaitForChild("EnhanceService"))
-local BattleService = require(services:WaitForChild("BattleService"))
 
 local ChatCommandService = {}
 ChatCommandService.Name = "ChatCommandService"
@@ -87,37 +86,6 @@ local function onEnhanceCommand(player: Player, arguments: { string })
 	replyKey(player, `chat.result.{response.result}`, response.newLevel)
 end
 
-local function onSellCommand(player: Player)
-	local response = EnhanceService.requestSell(player)
-
-	if not response.ok then
-		replyKey(player, `error.{response.reason}`)
-		return
-	end
-
-	replyKey(player, "chat.sold", Format.comma(response.goldGained))
-end
-
-local function onBattleCommand(player: Player, arguments: { string })
-	local targetUserId: number? = nil
-
-	if #arguments > 0 then
-		local name = table.concat(arguments, " ")
-		local target = BattleService.findTargetByName(name)
-
-		if target == nil then
-			replyKey(player, "error.not_found")
-			return
-		end
-		targetUserId = target.UserId
-	end
-
-	local response = BattleService.requestChallenge(player, targetUserId)
-	if not response.ok then
-		replyKey(player, `error.{response.reason}`)
-	end
-end
-
 local function onOddsCommand(player: Player)
 	local data = DataService.getData(player)
 	if data == nil then
@@ -125,7 +93,7 @@ local function onOddsCommand(player: Player)
 		return
 	end
 
-	local odds = EnhanceService.getDisplayOdds(data.weapon.level)
+	local odds = EnhanceService.getDisplayOdds(data)
 
 	if odds.cost <= 0 then
 		replyKey(player, "ui.maxLevel")
@@ -138,7 +106,7 @@ local function onOddsCommand(player: Player)
 		odds.level,
 		Format.percent(odds.success),
 		Format.percent(odds.keep),
-		Format.percent(odds.destroy),
+		Format.percent(odds.fail),
 		Format.comma(odds.cost)
 	)
 end
@@ -153,7 +121,7 @@ local function onInfoCommand(player: Player)
 	replyKey(
 		player,
 		"chat.info",
-		data.weapon.level,
+		EnhanceService.getDisplayOdds(data).level,
 		Format.comma(data.gold),
 		Format.comma(data.shards),
 		data.protectTickets,
@@ -173,20 +141,6 @@ local COMMANDS: { CommandSpec } = {
 		primary = "/강화",
 		secondary = "/enhance",
 		handler = onEnhanceCommand,
-	},
-	{
-		name = "ForgeSellCommand",
-		primary = "/판매",
-		secondary = "/sell",
-		handler = function(player, _)
-			onSellCommand(player)
-		end,
-	},
-	{
-		name = "ForgeBattleCommand",
-		primary = "/배틀",
-		secondary = "/battle",
-		handler = onBattleCommand,
 	},
 	{
 		name = "ForgeOddsCommand",

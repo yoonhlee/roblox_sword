@@ -8,7 +8,6 @@
 local t = require("./harness")
 local Locale = require("../src/shared/Locale")
 local Weapons = require("../src/shared/Config/Weapons")
-local Achievements = require("../src/shared/Config/Achievements")
 local Products = require("../src/shared/Config/Products")
 
 local ko = Locale.Strings.ko
@@ -45,19 +44,30 @@ t.describe("설정 데이터에 대응하는 문자열", function()
 		end
 	end)
 
-	t.it("모든 업적에 이름 키가 있다", function()
-		for _, achievement in Achievements.List do
+	t.it("모든 무기 등급에 이름 키가 있다", function()
+		for _, weapon in Weapons.List do
 			t.expect(
-				has(`achv.{achievement.id}.name`),
-				`업적 이름 키 없음: achv.{achievement.id}.name`
+				has(`rarity.{weapon.rarity}`),
+				`등급 이름 키 없음: rarity.{weapon.rarity}`
 			)
+		end
+		for _, rarity in Weapons.RARITY_ORDER do
+			t.expect(has(`rarity.{rarity}`), `등급 이름 키 없음: rarity.{rarity}`)
+		end
+	end)
+
+	t.it("보여 주는 순서(Order)에 모든 무기가 한 번씩 들어 있다", function()
+		local seen: { [string]: number } = {}
+		for _, id in Weapons.Order do
+			t.expect(Weapons.List[id] ~= nil, `Order 에 없는 무기 id: {id}`)
+			seen[id] = (seen[id] or 0) + 1
+		end
+		for id in Weapons.List do
+			t.expectEqual(seen[id], 1, `Order 에 {id} 가 들어 있는 횟수`)
 		end
 	end)
 
 	t.it("모든 상점 항목에 이름 키가 있다", function()
-		for key in Products.GamePasses do
-			t.expect(has(`shop.{key}`), `게임패스 이름 키 없음: shop.{key}`)
-		end
 		for key in Products.DeveloperProducts do
 			t.expect(has(`shop.{key}`), `개발자 상품 이름 키 없음: shop.{key}`)
 		end
@@ -65,7 +75,7 @@ t.describe("설정 데이터에 대응하는 문자열", function()
 end)
 
 t.describe("결과별 문자열", function()
-	local OUTCOMES = { "success", "keep", "destroy", "protected" }
+	local OUTCOMES = { "success", "keep", "fail", "protected" }
 
 	t.it("모든 강화 결과에 피드 대사가 있다", function()
 		for _, outcome in OUTCOMES do
@@ -103,10 +113,7 @@ t.describe("실패 사유 문자열", function()
 		새 사유를 만들면 이 목록과 Locale 양쪽에 추가해야 한다.
 	]]
 	local REASONS = {
-		"already_challenging",
-		"answer_first",
 		"banned",
-		"battle_cooldown",
 		"busy",
 		"filter_failed",
 		"invalid_argument",
@@ -114,19 +121,11 @@ t.describe("실패 사유 문자열", function()
 		"load_fail",
 		"maintenance",
 		"max_level",
-		"no_invite",
-		"no_opponent",
+		"no_more_swords",
 		"not_available",
 		"not_enough_gold",
-		"not_enough_shards",
-		"not_found",
+		"not_owned",
 		"not_ready",
-		"nothing_to_sell",
-		"opponent_busy",
-		"opponent_cooldown",
-		"opponent_left",
-		"opponent_not_ready",
-		"self_challenge",
 		"session_end",
 		"too_fast",
 		"unknown",

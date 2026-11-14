@@ -28,7 +28,7 @@ local OUTCOME_COLOR: { [string]: Color3 } = {
 	system = Color3.fromRGB(230, 226, 220),
 	success = Color3.fromRGB(255, 208, 112),
 	keep = Color3.fromRGB(198, 198, 198),
-	destroy = Color3.fromRGB(255, 120, 108),
+	fail = Color3.fromRGB(255, 120, 108),
 	protected = Color3.fromRGB(140, 210, 255),
 	broadcast = Color3.fromRGB(180, 255, 190),
 }

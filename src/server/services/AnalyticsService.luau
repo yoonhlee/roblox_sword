@@ -48,9 +48,7 @@ function AnalyticsService.logCurrency(
 	end
 
 	local direction = if amount > 0 then "source" else "sink"
-	print(
-		`[Economy] {player.UserId} {currency} {direction} {amount} ({reason}) → {balanceAfter}`
-	)
+	print(`[Economy] {player.UserId} {currency} {direction} {amount} ({reason}) → {balanceAfter}`)
 
 	sendToRoblox("currency", {
 		userId = player.UserId,

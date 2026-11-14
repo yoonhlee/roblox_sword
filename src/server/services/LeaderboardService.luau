@@ -1,6 +1,10 @@
 --!strict
 --[[
-	LeaderboardService — 전체 순위 (최고 강화 레벨 / 배틀 레이팅).
+	LeaderboardService — 전체 순위 (최고 강화 레벨).
+
+	배틀 레이팅 순위는 1:1 배틀과 함께 없앴다. 그 자리를 무엇으로 채울지는
+	아직 정해지지 않았다(통합 기획서 9절 D7). 새 순위를 추가할 때는 BoardKind 와
+	stores / lastWritten / valueFor 에 종류를 하나 더하면 된다.
 
 	OrderedDataStore 는 호출 예산이 빠듯해서 아무 때나 쓰면 안 된다.
 	그래서 쓰기는 두 경우로 제한한다.
@@ -35,14 +39,13 @@ local WRITE_INTERVAL_SECONDS = 300
 local CACHE_SECONDS = 60
 local MIN_BUDGET = 10 -- 이만큼은 남겨 둔다
 
-type BoardKind = "level" | "rating"
+type BoardKind = "level"
 
 local stores: { [string]: OrderedDataStore } = {}
 
 -- 마지막으로 써 넣은 값. 바뀌지 않았으면 다시 쓰지 않는다.
 local lastWritten: { [string]: { [number]: number } } = {
 	level = {},
-	rating = {},
 }
 
 type Cache = {
@@ -60,11 +63,8 @@ local function hasBudget(requestType: Enum.DataStoreRequestType): boolean
 	return ok and budget > MIN_BUDGET
 end
 
-local function valueFor(kind: BoardKind, data: Types.PlayerData): number
-	if kind == "level" then
-		return data.stats.highestLevel
-	end
-	return data.stats.rating
+local function valueFor(_kind: BoardKind, data: Types.PlayerData): number
+	return data.stats.highestLevel
 end
 
 --[[
@@ -153,7 +153,7 @@ local function fetchTop(kind: BoardKind): { Types.LeaderboardEntry }
 end
 
 local function handleGetLeaderboard(_player: Player, kind: any): { Types.LeaderboardEntry }
-	if kind ~= "level" and kind ~= "rating" then
+	if kind ~= "level" then
 		return {}
 	end
 	return fetchTop(kind)
@@ -162,7 +162,6 @@ end
 function LeaderboardService.Init()
 	local ok, err = pcall(function()
 		stores.level = DataStoreService:GetOrderedDataStore(GameConfig.ORDERED_STORE_LEVEL)
-		stores.rating = DataStoreService:GetOrderedDataStore(GameConfig.ORDERED_STORE_RATING)
 	end)
 
 	if not ok then
@@ -180,7 +179,6 @@ function LeaderboardService.Start()
 	DataService.onUnloading(function(player, data)
 		task.spawn(function()
 			writeEntry("level", player.UserId, valueFor("level", data))
-			writeEntry("rating", player.UserId, valueFor("rating", data))
 		end)
 	end)
 
@@ -191,14 +189,12 @@ function LeaderboardService.Start()
 
 			for player, data in DataService.getAllActive() do
 				writeEntry("level", player.UserId, valueFor("level", data))
-				writeEntry("rating", player.UserId, valueFor("rating", data))
 			end
 		end
 	end)
 
 	Players.PlayerRemoving:Connect(function(player)
 		lastWritten.level[player.UserId] = nil
-		lastWritten.rating[player.UserId] = nil
 	end)
 end
 

@@ -1,9 +1,12 @@
 --!strict
 --[[
-	CollectionController — 도감 / 업적 / 랭킹을 탭 하나로 묶은 화면.
+	CollectionController — 도감 / 랭킹 / 설정을 탭 하나로 묶은 화면.
 
 	세 화면을 따로 만들면 코드가 세 배가 되고 모바일에서 버튼도 자리를 잃는다.
 	한 패널 안에서 탭으로 바꾸는 편이 화면도 코드도 단순하다.
+
+	랭킹은 지금 "최고 강화" 하나뿐이다. 배틀 레이팅 순위는 1:1 배틀과 함께 없앴고,
+	그 자리를 채울 순위는 아직 정해지지 않았다(통합 기획서 9절 D7).
 ]]
 
 local Players = game:GetService("Players")
@@ -28,16 +31,17 @@ local COLOR_ACCENT = Color3.fromRGB(226, 142, 58)
 
 local TOUCH_MIN = 44
 
-type Tab = "codex" | "achv" | "rank" | "settings"
+type Tab = "codex" | "rank" | "settings"
+
+local TABS: { Tab } = { "codex", "rank", "settings" }
 
 local gui: ScreenGui
 local panel: Frame
 local scroller: ScrollingFrame
 local tabButtons: { [string]: TextButton } = {}
-local rankToggle: TextButton
+local rankTitle: TextLabel
 local closeButton: TextButton
 
-local codexRemote: RemoteFunction
 local boardRemote: RemoteFunction
 local settingRemote: RemoteFunction
 local settingsRow: Frame
@@ -45,7 +49,9 @@ local sfxButton: TextButton
 local languageButton: TextButton
 
 local activeTab: Tab = "codex"
-local rankKind = "level"
+
+-- 서버에 요청하는 순위 종류. 지금은 최고 강화 레벨 하나뿐이다.
+local RANK_KIND = "level"
 
 local function makeRow(text: string, color: Color3, order: number)
 	local label = Instance.new("TextLabel")
@@ -74,67 +80,63 @@ local function clearRows()
 	end
 end
 
+--[[
+	도감: 검 1종 = 1칸. 가진 검은 역대 최고 레벨과 달성한 기념 구간(5·10·15·20강)을 보여 준다.
+	서버에 따로 묻지 않고 복제받은 데이터(swords, codex)로 그린다.
+]]
 local function renderCodex()
 	local language = ClientState.getLanguage()
-
-	local ok, response = pcall(function()
-		return codexRemote:InvokeServer()
-	end)
+	local data = ClientState.getData()
 
 	clearRows()
 
-	if not ok or type(response) ~= "table" or response.entries == nil then
+	if data == nil then
 		makeRow(Locale.get(language, "error.not_ready"), COLOR_MUTED, 1)
 		return
 	end
 
-	for index, entry in response.entries do
-		local weapon = Weapons.get(entry.weaponId)
-		local name = if weapon then Locale.get(language, weapon.nameKey) else entry.weaponId
-
-		local text = Locale.get(language, "ui.codexRow", name, entry.milestone)
-		if not entry.unlocked then
-			text ..= `  ({Locale.get(language, "ui.locked")})`
+	for index, weaponId in Weapons.Order do
+		local weapon = Weapons.get(weaponId)
+		if weapon == nil then
+			continue
 		end
 
-		makeRow(text, if entry.unlocked then COLOR_TEXT else COLOR_MUTED, index)
-	end
-end
+		local name = Locale.get(language, weapon.nameKey)
+		local rarity = Locale.get(language, `rarity.{weapon.rarity}`)
+		local sword = data.swords[weaponId]
 
-local function renderAchievements()
-	local language = ClientState.getLanguage()
-
-	local ok, response = pcall(function()
-		return codexRemote:InvokeServer()
-	end)
-
-	clearRows()
-
-	if not ok or type(response) ~= "table" or response.achievements == nil then
-		makeRow(Locale.get(language, "error.not_ready"), COLOR_MUTED, 1)
-		return
-	end
-
-	for index, entry in response.achievements do
-		local text = Locale.get(language, `achv.{entry.id}.name`)
-			.. "  ·  "
-			.. Locale.get(language, "ui.reward", Format.comma(entry.gold))
-
-		if not entry.unlocked then
-			text ..= `  ({Locale.get(language, "ui.locked")})`
+		if sword == nil then
+			makeRow(Locale.get(language, "ui.codexMissing", name, rarity), COLOR_MUTED, index)
+			continue
 		end
 
-		makeRow(text, if entry.unlocked then COLOR_ACCENT else COLOR_MUTED, index)
+		local text = Locale.get(language, "ui.codexOwned", name, rarity, sword.bestLevel)
+
+		local reached: { string } = {}
+		for _, milestone in Weapons.CODEX_MILESTONES do
+			if data.codex[`{weaponId}:{milestone}`] then
+				table.insert(reached, Format.level(milestone))
+			end
+		end
+		if #reached > 0 then
+			text ..= "  ·  " .. Locale.get(
+				language,
+				"ui.codexMilestones",
+				table.concat(reached, " ")
+			)
+		end
+
+		makeRow(text, COLOR_TEXT, index)
 	end
 end
 
 local function renderRanking()
 	local language = ClientState.getLanguage()
 
-	rankToggle.Text = Locale.get(language, `ui.rank.{rankKind}`)
+	rankTitle.Text = Locale.get(language, `ui.rank.{RANK_KIND}`)
 
 	local ok, entries = pcall(function()
-		return boardRemote:InvokeServer(rankKind)
+		return boardRemote:InvokeServer(RANK_KIND)
 	end)
 
 	clearRows()
@@ -147,12 +149,8 @@ local function renderRanking()
 	local myUserId = Players.LocalPlayer.UserId
 
 	for index, entry in entries do
-		local value = if rankKind == "level"
-			then Format.level(entry.value)
-			else tostring(entry.value)
-
 		makeRow(
-			Locale.get(language, "ui.rank.row", entry.rank, entry.name, value),
+			Locale.get(language, "ui.rank.row", entry.rank, entry.name, Format.level(entry.value)),
 			if entry.userId == myUserId then COLOR_ACCENT else COLOR_TEXT,
 			index
 		)
@@ -192,7 +190,7 @@ local function refresh()
 	end
 
 	closeButton.Text = Locale.get(language, "ui.close")
-	rankToggle.Visible = activeTab == "rank"
+	rankTitle.Visible = activeTab == "rank"
 	settingsRow.Visible = activeTab == "settings"
 
 	if activeTab == "settings" then
@@ -206,8 +204,6 @@ local function refresh()
 	task.spawn(function()
 		if activeTab == "codex" then
 			renderCodex()
-		elseif activeTab == "achv" then
-			renderAchievements()
 		else
 			renderRanking()
 		end
@@ -297,32 +293,30 @@ local function build()
 	tabList.Padding = UDim.new(0, 6)
 	tabList.Parent = tabRow
 
-	local order = 0
-	for _, key in { "codex", "achv", "rank", "settings" } do
-		order += 1
+	for order, key in TABS do
 		local button = makeButton(tabRow, {
-			Size = UDim2.new(0.25, -5, 1, 0),
+			Size = UDim2.new(1 / #TABS, -4, 1, 0),
 			TextSize = 13,
 			LayoutOrder = order,
 		})
 		button.Activated:Connect(function()
-			activeTab = key :: Tab
+			activeTab = key
 			refresh()
 		end)
 		tabButtons[key] = button
 	end
 
-	rankToggle = makeButton(panel, {
-		Size = UDim2.new(1, 0, 0, 34),
-		TextSize = 14,
-		Font = Enum.Font.GothamMedium,
-		Visible = false,
-		LayoutOrder = 2,
-	})
-	rankToggle.Activated:Connect(function()
-		rankKind = if rankKind == "level" then "rating" else "level"
-		refresh()
-	end)
+	-- 랭킹 탭에서만 보이는 제목 (어떤 순위인지)
+	rankTitle = Instance.new("TextLabel")
+	rankTitle.BackgroundTransparency = 1
+	rankTitle.Font = Enum.Font.GothamMedium
+	rankTitle.TextSize = 14
+	rankTitle.TextColor3 = COLOR_ACCENT
+	rankTitle.Size = UDim2.new(1, 0, 0, 34)
+	rankTitle.Text = ""
+	rankTitle.Visible = false
+	rankTitle.LayoutOrder = 2
+	rankTitle.Parent = panel
 
 	-- 설정 탭에서만 보이는 줄
 	settingsRow = Instance.new("Frame")
@@ -402,7 +396,6 @@ function CollectionController.Init()
 	build()
 
 	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
-	codexRemote = remotesFolder:WaitForChild(Remotes.Functions.GetCodex) :: RemoteFunction
 	boardRemote = remotesFolder:WaitForChild(Remotes.Functions.GetLeaderboard) :: RemoteFunction
 	settingRemote = remotesFolder:WaitForChild(Remotes.Functions.SetSetting) :: RemoteFunction
 end
@@ -410,8 +403,14 @@ end
 function CollectionController.Start()
 	-- 설정을 바꾸면 서버가 데이터를 다시 내려 주므로, 그때 화면을 갱신한다.
 	ClientState.onChanged(function()
-		if gui.Enabled and activeTab == "settings" then
+		if not gui.Enabled then
+			return
+		end
+
+		if activeTab == "settings" then
 			renderSettings()
+		elseif activeTab == "codex" then
+			renderCodex()
 		end
 	end)
 end

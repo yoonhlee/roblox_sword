@@ -106,50 +106,86 @@ Claude Code 가 이 저장소에서 일할 때 가장 먼저 읽는 파일이다
 
 ## 4. 현재 상태 (2026-11-14 기준)
 
-원본 지시서의 Phase 0~7 **전부 구현 완료**. Luau 46개 파일, 테스트 73개 통과.
+**개발 3단계까지 코드 작성 완료, 커밋 전.** Luau 46개 파일, 테스트 83개 통과.
+Studio 실동작은 한 번도 확인하지 못했다. 개발자가 Studio 에서 돌려 보고 Output 오류를 알려 주기로 했다.
 
-> ⚠️ **기획 전환 (2026-11-14 승인, 코드 미반영)**: 1:1 배틀 폐지, 게임 목표를
-> **추격 생존 경주**로, 강화를 **2구간**(1~10강 실패 없음 / 11~20강 실패 시 10강 복귀)으로
-> 바꾼다. 검 여러 개(뽑기·착용·도감 업그레이드), 트레드밀이 추가되고, 골드 팩·게임패스·업적·
-> 판매·방지권 골드 구매는 삭제됐다.
-> 아래 표는 *지금 코드* 기준이다. 새로 만들 때는 **`docs/통합-기획서.md`** 를 기준으로 하고
-> (걷어 낼 것·바꿀 것은 10절), 배틀 코드 위에 기능을 쌓지 않는다.
-> 결정 대기는 통합 기획서 9절, 승인 기록(P1~P42)은 `docs/기획서.md` 6절.
+### 개발 계획 (개발자 지시)
+
+| 단계 | 내용 | 상태 |
+| --- | --- | --- |
+| 1 | 걷어 내기 (통합 기획서 10-1절) | 코드 완료 · Studio 확인 대기 |
+| 2 | 강화 새 규칙 (통합 기획서 3절) | 코드 완료 · Studio 확인 대기 |
+| 3 | 검 보관함·착용·소지 상한 구매·뽑기·도감, 스키마 v4 | 코드 완료 · Studio 확인 대기 |
+| 4 | 추격 생존 경주 + 로비 트레드밀 1단계 (거리는 서버 계산, D16·D6 은 자리만) | 시작 전 |
+| 5 | 방지권 상품 3종 + 천장 포인트 + **파편 뽑기** (수치·ID 는 비워 두고, 비면 숨김) | 시작 전 |
+
+일하는 방식 (개발자 지시, 2026-11-14):
+
+- **가짜 로블록스 환경 같은 큰 검증 도구는 만들지 않는다.** 자체 검증은 6절의 필수 항목(테스트, 문법, 포맷, 린트,
+  Rojo 빌드)까지만 하고, 실제 실행과 디버깅은 개발자가 Studio 에서 한다. 토큰을 아끼는 쪽으로 일한다.
+- 단계 보고에 넣을 것: ① 만든 것·지운 것 ② 검증한 것 / 못 한 것 + Studio 확인 절차 ③ 임시값을 넣은 미정 항목
+  ④ 기획서에 없는 판단 ⑤ 커밋 준비 여부.
+- 미정 수치(D 항목)는 지어내지 않는다. 필요하면 Config 에 "미정(Dxx)" 표시를 단 임시값. 추천치는 그대로 쓴다.
+- 4단계 매칭: 대기열 **20명**이 차면 즉시 출발, 아니면 10초에 대기자 전원 출발(P43, 숫자는 나중에 조절).
 
 ### 서버 (`src/server/services/`, 부트스트랩 순서대로)
 
 | 서비스 | 하는 일 |
 | --- | --- |
-| DataService | ProfileStore 세션, 템플릿, 마이그레이션(v1→v2→v3), 차단 확인, 복제, 설정 변경 |
+| DataService | ProfileStore 세션, 템플릿, 마이그레이션 호출(`Pure/DataMigration`, v1→v4), 차단 확인, 복제, 설정 변경 |
 | AnalyticsService | 재화 source/sink·강화·퍼널 로그, 골드 급증 탐지 (Roblox Analytics 연결은 미완) |
 | LiveOpsService | DataStore 원격 설정 60초 폴링: 점검·공지·확률 버프 이벤트 |
-| EconomyService | 재화 증감 단일 창구, 일일 초기화, 출석·플레이 보상, 방지권 구매 |
-| EnhanceService | 강화·판매·이름 짓기(필터링), 레이트 리밋+락, 15강 공지 |
-| ChatCommandService | `/강화 [보호]` `/판매` `/배틀 [닉]` `/확률` `/정보` `/도움말` |
-| BattleService | 도전/수락(15초), 승패·보상·Elo, 어뷰징 방지, 매분 일일 초기화 |
-| ShopService | 게임패스 조회, 골드 배수, ProcessReceipt(저장 확인 후 지급 완료) |
-| CodexService | 도감 칸 보상, 업적 20개 평가(강화·배틀·접속 시) |
-| LeaderboardService | OrderedDataStore 순위, 예산 확인, 퇴장 시+5분 주기 쓰기 |
+| EconomyService | 재화 증감 단일 창구(배수 없음), 출석·플레이 보상, 접속 중 날짜 변경 확인 |
+| CodexService | 검별 최고 레벨과 5·10·15·20강 달성 기록 (`codex["검id:구간"]`). 보상 효과는 D16 미정이라 기록만 |
+| EnhanceService | 착용 검 강화(2구간, 실패 시 10강), 이름 짓기(필터링), 레이트 리밋+락, 15강 공지, GetState |
+| SwordService | 착용 검 바꾸기, 소지 상한 구매 + 새 검 뽑기 |
+| ChatCommandService | `/강화 [보호]` `/확률` `/정보` `/도움말` |
+| ShopService | 방지권 묶음 상품 틀, ProcessReceipt(저장 확인 후 지급 완료). 상품 3종은 5단계 |
+| LeaderboardService | 최고 강화 레벨 순위 (OrderedDataStore, 예산 확인) |
 | AdminService | `/관리` 명령, 감사 로그. `ADMIN_USER_IDS` 가 비면 비활성 |
 | RateLimiter | 유틸 (생명주기 없음) |
 
-`src/server/vendor/ProfileStore.luau` — 외부 원본(커밋 45c9847, Apache 2.0). 고치지 않는다.
+`src/server/vendor/ProfileStore.luau` — 외부 원본(커밋 45c9847, Apache 2.0). 고치지 않는다(`.styluaignore` 로 포맷에서도 제외).
 
 ### 클라이언트 (`src/client/controllers/`)
 
-Sound → Effects → Feed → OddsTable → Battle → Shop → Collection → UI 순서로 초기화.
-`ClientState` 가 서버가 보낸 데이터의 로컬 사본(표시 전용)을 들고 있다.
+Sound → Effects → Feed → OddsTable → Shop → Sword → Collection → UI 순서로 초기화.
+`ClientState` 가 서버가 보낸 데이터의 로컬 사본(표시 전용)과 "방지권 사용" 스위치를 들고 있다.
+확률표·뽑기 확률표·도감은 복제받은 데이터와 `Pure/` 함수로 클라이언트가 그린다(서버와 같은 함수라 어긋나지 않는다).
 
 ### 공유 (`src/shared/`)
 
-- `Config/` — EnhanceTable, BattleConfig, EconomyConfig, Weapons, Products, Game, Achievements
-- `Pure/` — EnhanceLogic, BattleLogic, Format (Roblox API 없음, 테스트 대상)
-- `Types` (스키마 v3), `Remotes` (리모트 이름 한 곳), `Locale` (ko/en 각 163키)
+- `Config/` — EnhanceTable(확률표, 비용 상수), EconomyConfig, Weapons(5종, 뽑기 가중치, 상한 가격 상수), Products, Game
+- `Pure/` — EnhanceLogic, SwordLogic, DataMigration, Format (Roblox API 없음, 테스트 대상)
+- `Types` (스키마 v4), `Remotes`, `Locale` (ko/en 각 113키)
 
-### 기획상 정해졌지만 비어 있는 곳
+### 저장 스키마 v4
 
-지금 코드에는 무기 교체 기능이 없어서 도감 대부분을 채울 수 없다(새 기획의 검 보관함으로 해결 예정).
-사운드 에셋, 무기 외형(3D 모델), 로비·경주 코스 공간이 비어 있다.
+`swords[검id] = { id, level, bestLevel, customName? }`, `equippedId`, `swordCapacity`, `pityPoints`.
+v3 의 `weapon` 은 첫 검으로 옮기고 필드는 지우지 않았다. 배틀·업적 필드도 그대로 두고 읽지도 쓰지도 않는다.
+`stats.destroyed` 는 이름만 옛것이고 지금은 "2구간 실패 횟수"다.
+
+### 임시값(미정)과 비어 있는 곳
+
+| 항목 | 지금 값 | 결정 |
+| --- | --- | --- |
+| 2구간 실패 시 파편 | `floor(레벨^1.5)` (프로토타입 공식) | D12 |
+| 방지권 상품 | 5개 묶음 1종, ID 0 이라 안 보임 | D12, 5단계 |
+| 검 4종 등급 | rare·rare·epic·legend (프로토타입 값) | D22 |
+| 도감 기념 업그레이드 | 달성 기록만 | D16 |
+| 시작 골드 100, 출석, 15분 보상 | 프로토타입 값 | 재검토 대상 |
+
+- **시작 골드 문제**: 새 비용에서 0→1강이 200골드라, 새 유저(100 + 첫 출석 100)는 한 번만 강화할 수 있다.
+  "첫 접속 강화 3회 안내"를 유지하려면 최대 1,000골드가 필요하다. 개발자 결정 대기.
+- **4단계 전까지 골드 수입이 거의 없다**(출석·15분 보상뿐). Studio 테스트는 `/관리 골드` 로 한다(`ADMIN_USER_IDS` 필요).
+- 방지권을 얻는 길도 5단계 전까지는 `/관리 방지권` 뿐이다.
+- 사운드 에셋, 검 외형(3D 모델), 로비·경주 코스 공간이 비어 있다.
+
+### 알아 둘 것
+
+- 접속한 채 자정(UTC)을 넘기면 그날 출석 골드를 못 받는다(예전부터의 동작, 그대로 뒀다. 출석 재검토 때 함께 정한다).
+- `ANOMALY_GOLD_DELTA`(60초에 20만)는 경주 보상(최대 약 10억)이 생기면 계속 울린다. 4단계에서 조정한다.
+- 내려받은 `luau-lsp` 실행 파일은 이 환경의 권한 설정이 실행을 거부했다. 다시 시도하지 말 것.
 
 ---
 
@@ -164,8 +200,13 @@ Sound → Effects → Feed → OddsTable → Battle → Shop → Collection → 
 | `purchaseHistory` 를 배열로 (v2) | 오래된 것부터 버려 200개 유지 |
 | 지어 준 무기 이름은 레벨이 바뀌어도 유지 | 사용성. (판매는 P41 로 삭제, "파괴"는 새 기획에서 "실패 → 10강 복귀"로 바뀜) |
 | (폐지) 배틀 승패·Elo 레이팅 | 1:1 배틀이 폐지돼(P4) 더 이상 쓰지 않는다. 코드는 걷어 낼 대상 |
-| 코드의 밸런스 수치는 아직 원안(프로토타입) 그대로 | 새 수치는 통합 기획서에 확정돼 있고, 구현 요청이 오면 그때 코드에 반영한다 |
 | 채팅 명령어를 서버 런타임에 생성 | 코드로 관리하려고. **Studio 실동작 미확인** |
+| `default.project.json` 에 `TextChatService.ChatVersion = TextChatService` | 이 속성의 기본값은 옛 채팅이고 스크립트로는 못 바꾼다. 안 넣으면 빌드한 플레이스에서 채팅 명령이 등록되지 않을 수 있다 |
+| 검 목록은 `swords[검id]` 딕셔너리 | 같은 검을 두 개 가질 수 없어서 id 가 곧 키다. 가진 검 수 = 키 개수 |
+| 템플릿의 `swords` 는 빈 표, 기본 검은 `DataMigration.repair` 가 지급 | 템플릿에 넣으면 Reconcile 이 옛 데이터에도 끼워 넣어 마이그레이션과 엉킨다 |
+| 세션 종료 신호는 "밖에서 끝난 경우"만 처리 | `EndSession()` 이 신호를 그 자리에서 부른다. 구분하지 않으면 나갈 때 리스너가 두 번 불리고 차단 안내가 엉뚱하게 나간다 |
+| 금액 반올림: 강화 비용·상한 가격은 반올림 | 기획서에 규칙이 없어 정했다. 검이 1개면 공식 값과 정확히 같다 |
+| 뽑기 확률 표시는 소수 둘째 자리, 합이 정확히 100 이 되게 남는 몫을 나눠 줌 | 그냥 반올림하면 합이 99.99 가 될 수 있다. 실제 추첨은 원래 가중치로 한다 |
 
 ---
 
@@ -177,12 +218,13 @@ Sound → Effects → Feed → OddsTable → Battle → Shop → Collection → 
 # 순수 로직 테스트·시뮬레이션용 Luau 실행기 (Lune 대체, 약 40초 빌드)
 cargo build --release --manifest-path tools/luaurun/Cargo.toml
 R=tools/luaurun/target/release/luaurun
-$R tests/run.luau                         # 테스트 73개
-$R tools/simulate_economy.luau            # 경제 시뮬레이션
+$R tests/run.luau                         # 테스트 83개
+$R tools/simulate_economy.luau            # 강화 시뮬레이션 (0강→20강 기대 시도 약 9,440회가 나와야 한다)
 $R --check $(git ls-files '*.luau')       # 전 파일 문법 검사
 
 # 로블록스 툴체인 (crates.io 에서 빌드, 수 분)
-cargo install rojo selene stylua --locked
+cargo install rojo selene --locked
+cargo install stylua --locked --features luau   # luau 기능 없이 깔면 .luau 를 하나도 검사하지 않고 통과한다
 rojo build -o ForgeFever.rbxlx            # 프로젝트가 실제로 빌드되는지
 stylua --check src tests tools
 ```

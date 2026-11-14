@@ -41,13 +41,16 @@ function RateLimiter.new(config: Config): Limiter
 	assert(config.maxRequests > 0, "maxRequests 는 1 이상이어야 합니다")
 	assert(config.windowSeconds > 0, "windowSeconds 는 0 보다 커야 합니다")
 
-	return setmetatable({
-		maxRequests = config.maxRequests,
-		windowSeconds = config.windowSeconds,
-		clock = config.clock or os.clock,
-		history = {},
-		locks = {},
-	} :: Self, RateLimiter)
+	return setmetatable(
+		{
+			maxRequests = config.maxRequests,
+			windowSeconds = config.windowSeconds,
+			clock = config.clock or os.clock,
+			history = {},
+			locks = {},
+		} :: Self,
+		RateLimiter
+	)
 end
 
 --[[

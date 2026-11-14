@@ -15,7 +15,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Locale = require(Shared:WaitForChild("Locale"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
-local Format = require(Shared:WaitForChild("Pure"):WaitForChild("Format"))
 
 local controllers = script.Parent
 local ClientState = require(controllers.Parent:WaitForChild("ClientState"))
@@ -63,15 +62,9 @@ local function makeButton(parent: Instance, props: { [string]: any }): TextButto
 	return button
 end
 
--- 상품 한 줄에 쓸 이름. 지급량이 있는 상품은 수량을 함께 보여 준다.
+-- 상품 한 줄에 쓸 이름. 방지권 개수를 함께 보여 준다.
 local function itemLabel(language: string, item: any): string
-	if item.goldAmount > 0 then
-		return Locale.get(language, `shop.{item.key}`, Format.comma(item.goldAmount))
-	end
-	if item.ticketAmount > 0 then
-		return Locale.get(language, `shop.{item.key}`, item.ticketAmount)
-	end
-	return Locale.get(language, `shop.{item.key}`)
+	return Locale.get(language, `shop.{item.key}`, tonumber(item.ticketAmount) or 0)
 end
 
 local function refresh()
@@ -105,33 +98,25 @@ local function refresh()
 	end
 
 	for index, item in items do
-		local text = itemLabel(language, item)
-		if item.owned then
-			text ..= `  ({Locale.get(language, "ui.owned")})`
-		end
-
 		local row = makeButton(scroller, {
-			Text = text,
+			Text = itemLabel(language, item),
 			LayoutOrder = index,
-			TextColor3 = if item.owned then COLOR_MUTED else COLOR_TEXT,
 		})
 
-		if not item.owned then
-			row.Activated:Connect(function()
-				task.spawn(function()
-					local success, response = pcall(function()
-						return promptRemote:InvokeServer(item.kind, item.key)
-					end)
-
-					if success and type(response) == "table" and response.ok ~= true then
-						FeedController.pushRaw(
-							Locale.get(language, `error.{tostring(response.reason)}`),
-							COLOR_ACCENT
-						)
-					end
+		row.Activated:Connect(function()
+			task.spawn(function()
+				local success, response = pcall(function()
+					return promptRemote:InvokeServer(item.key)
 				end)
+
+				if success and type(response) == "table" and response.ok ~= true then
+					FeedController.pushRaw(
+						Locale.get(language, `error.{tostring(response.reason)}`),
+						COLOR_ACCENT
+					)
+				end
 			end)
-		end
+		end)
 	end
 end
 

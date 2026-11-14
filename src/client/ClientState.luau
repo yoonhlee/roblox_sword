@@ -21,6 +21,8 @@ local liveOps: { maintenance: boolean, notice: string, event: any } = {
 	notice = "",
 	event = nil,
 }
+-- "방지권 사용" 스위치. 강화 요청에 실어 보내고, 화면의 확률 표시도 이 값에 따라 바뀐다.
+local useProtect = false
 local listeners: { () -> () } = {}
 
 local function notify()
@@ -48,6 +50,41 @@ end
 
 function ClientState.getOdds(): Types.DisplayOdds?
 	return odds
+end
+
+-- 착용 중인 검 (데이터가 아직 없으면 nil)
+function ClientState.getEquipped(): Types.SwordState?
+	if data == nil or type(data.swords) ~= "table" then
+		return nil
+	end
+	return data.swords[data.equippedId]
+end
+
+-- 가진 검 수 (데이터가 아직 없으면 1)
+function ClientState.getSwordCount(): number
+	if data == nil or type(data.swords) ~= "table" then
+		return 1
+	end
+
+	local count = 0
+	for _ in data.swords do
+		count += 1
+	end
+	return math.max(1, count)
+end
+
+function ClientState.getUseProtect(): boolean
+	return useProtect
+end
+
+function ClientState.setUseProtect(value: boolean)
+	useProtect = value
+	notify()
+end
+
+-- 방지권이 실제로 효과를 내는 상태인지 (스위치가 켜져 있고 방지권이 1개 이상)
+function ClientState.isProtectActive(): boolean
+	return useProtect and data ~= nil and data.protectTickets > 0
 end
 
 function ClientState.getLanguage(): string

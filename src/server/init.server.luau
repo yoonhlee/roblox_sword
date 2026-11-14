@@ -26,11 +26,11 @@ local SERVICE_ORDER = {
 	"AnalyticsService",
 	"LiveOpsService",
 	"EconomyService",
-	"EnhanceService",
-	"ChatCommandService",
-	"BattleService",
-	"ShopService",
 	"CodexService",
+	"EnhanceService",
+	"SwordService",
+	"ChatCommandService",
+	"ShopService",
 	"LeaderboardService",
 	"AdminService",
 }
@@ -57,7 +57,10 @@ local function runStage(stage: "Init" | "Start", services: { Service })
 		if not ok then
 			warn(`[Bootstrap] {service.Name or "?"}.{stage} 실패:\n{err}`)
 			if stage == "Init" then
-				error(`[Bootstrap] {service.Name or "?"}.Init 실패로 서버 시작을 중단합니다`, 0)
+				error(
+					`[Bootstrap] {service.Name or "?"}.Init 실패로 서버 시작을 중단합니다`,
+					0
+				)
 			end
 		end
 	end
