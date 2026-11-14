@@ -28,3 +28,6 @@ build/
 
 # selene 생성 std
 roblox.toml
+
+# luaurun 빌드 산출물
+tools/luaurun/target/

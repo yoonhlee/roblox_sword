@@ -164,8 +164,12 @@ src/shared/              → ReplicatedStorage
   Pure/                  Roblox API 를 쓰지 않는 순수 함수 (테스트 대상)
 
 tests/                   Lune 테스트
-tools/                   경제 시뮬레이션 등 개발 도구
+tools/                   경제 시뮬레이션, Luau 테스트 실행기(luaurun) 등 개발 도구
+docs/기획서.md            게임 기획 기준 문서 + 제안·승인 기록
+docs/원본-지시서.md        처음 받은 지시서 원문
 docs/economy.md          경제 분석 결과와 밸런스 제안 (수치는 아직 안 바꿈)
+docs/시작하기.md          Studio 에서 실행하는 법
+CLAUDE.md                Claude 가 다음 세션에도 이어서 일하기 위한 작업 메모
 ```
 
 ### 지금 동작하는 것

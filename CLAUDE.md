@@ -1,0 +1,179 @@
+# 강화의 대장간 (ForgeFever) — Claude 작업 메모
+
+Claude Code 가 이 저장소에서 일할 때 가장 먼저 읽는 파일이다.
+새 세션은 대화 기록이 없으므로 **여기 적힌 것이 기억의 전부**라고 생각하고,
+중요한 결정이 생기면 반드시 이 파일이나 `docs/기획서.md` 에 남긴다.
+
+관련 문서
+
+| 문서 | 내용 |
+| --- | --- |
+| `docs/기획서.md` | 게임 기획의 기준. 제안·승인 기록도 여기 쌓는다 |
+| `docs/원본-지시서.md` | 처음 받은 지시서 원문 (확률표, 공식, 정책 요구사항 전체) |
+| `docs/economy.md` | 경제 시뮬레이션 결과와 밸런스 제안 |
+| `docs/시작하기.md` | 개발자가 Studio 에서 실행하는 법 |
+| `README.md` | 개발 환경, 폴더 구조, 운영 명령어, 출시 체크리스트 |
+
+---
+
+## 1. 개발자와 일하는 방식
+
+- 개발자는 **개발 지식이 없다.** 기술적인 판단(구조, 라이브러리, API 사용법)은
+  묻지 말고 로블록스 표준 방식으로 내가 정해서 진행한다. (2026-09 지시:
+  "모든 것을 나한테 묻지 말고 그냥 네가 쭉 완성시켜")
+- 설명은 쉬운 한국어, 반말 톤. 기술 용어는 꼭 필요할 때만, 풀어서.
+- 결과를 보고할 때는 **검증한 것과 못 한 것을 구분해서** 솔직하게 말한다.
+  특히 나는 Roblox Studio 를 실행할 수 없으므로 UI·DataStore 실동작은 "미확인"이다.
+
+### 지금 단계: 기획 (2026-11 ~)
+
+개발자가 게임 기획 아이디어를 제안하면:
+
+1. **장점과 단점**을 말한다. (가능하면 기존 시스템에 미치는 영향, 작업량,
+   로블록스 정책·수익화·어뷰징 측면까지)
+2. 내 의견(추천/비추천/조건부)을 한 줄로 덧붙인다.
+3. 개발자가 **승인하면** `docs/기획서.md` 에 반영하고 제안 기록 표를 갱신한다.
+4. **승인 전에는 기획서도 코드도 바꾸지 않는다.** 보류·거절도 기록 표에 남긴다.
+5. 기획서에 들어간 것을 구현하는 건 개발자가 구현을 요청했을 때 한다.
+
+### 바꾸면 안 되는 것 (승인 없이)
+
+- 밸런스 수치 (`src/shared/Config/*` 의 확률·비용·보상). 제안만 하고 승인 후 적용.
+- 공개 확률표. 플레이어 신뢰 문제라 특히 신중히.
+- Robux 로 확률 결과를 직접 파는 상품은 만들지 않는다. 필요해지면 먼저 확인.
+
+---
+
+## 2. 확정된 정체성
+
+| 항목 | 값 |
+| --- | --- |
+| 게임 이름 | 강화의 대장간 / Forge Fever |
+| 내부 식별자 | `ForgeFever` (Rojo 프로젝트명, DataStore 접두사) |
+| 결과 피드 NPC | 모루 영감 (영문 Old Anvil) — 무뚝뚝하고 짧은 말투 |
+| 무기 | 무쇠 검, 잉걸불 검, 물결 송곳니, 폭풍 바늘, 새벽가르기 (전부 오리지널) |
+| 타깃 | 모바일 우선, 한국어 기본 + 영어 |
+| 영감 | 채팅 봇형 강화 게임의 "버튼 한 번 → 결과 텍스트" 감성. **이름·캐릭터·대사·이미지·문구는 전부 오리지널**, 기존 서비스 것을 베끼지 않는다 |
+
+---
+
+## 3. 코드 규칙 (원본 지시서에서 계속 유효한 것)
+
+- 모든 Luau 파일 맨 위에 `--!strict`.
+- **서버 권위**: 확률·골드·레벨·배틀 결과는 서버에서만. 클라이언트는 요청과 표시만.
+  클라이언트가 보낸 레벨/골드/결과 값은 절대 신뢰하지 않는다.
+- 밸런스 수치는 코드에 박지 말고 `src/shared/Config/` 에 데이터로.
+- 서버 함수는 입력 타입 검증부터. 실패는 에러 대신 `{ ok = false, reason = "..." }`.
+  새 `reason` 을 만들면 `Locale` 의 `error.<reason>` 과 `tests/Locale.spec.luau` 의
+  `REASONS` 목록에도 추가한다.
+- 화면 문자열은 `src/shared/Locale.luau` 의 키로만. 한국어·영어 키는 항상 짝을 맞춘다.
+- **로블록스 API 를 지어내지 않는다.** 확신이 없으면 공식 문서를 확인한다(7절 참고).
+  실제 사례: Phase 0 에서 지어낸 `"$optional": true` 때문에 Rojo 프로젝트가 아예
+  파싱되지 않았다. 올바른 문법은 `"$path": { "optional": "Packages" }`.
+- 데이터 변경 패턴: `DataService.getActiveData(player)` 로 받고 → **yield 없이** 전부
+  바꾸고 → 마지막에 `DataService.replicate(player)` 한 번. yield 가 필요하면
+  (필터링, 웹 요청) yield 가 끝난 뒤 데이터를 **다시** 가져온다.
+- 재화 증감은 반드시 `EconomyService` 를 거친다 (기록·음수 방지).
+- 스키마를 바꾸면 `Types.SCHEMA_VERSION` 을 올리고 `DataService.migrate` 에 단계 추가.
+  기존 데이터를 절대 버리지 않는다.
+- 커밋은 기능 단위, 메시지는 한국어. 개발 브랜치: `claude/awesome-mccarthy-iavp1p`.
+
+---
+
+## 4. 현재 상태 (2026-11-14 기준)
+
+원본 지시서의 Phase 0~7 **전부 구현 완료**. Luau 46개 파일, 테스트 73개 통과.
+
+### 서버 (`src/server/services/`, 부트스트랩 순서대로)
+
+| 서비스 | 하는 일 |
+| --- | --- |
+| DataService | ProfileStore 세션, 템플릿, 마이그레이션(v1→v2→v3), 차단 확인, 복제, 설정 변경 |
+| AnalyticsService | 재화 source/sink·강화·퍼널 로그, 골드 급증 탐지 (Roblox Analytics 연결은 미완) |
+| LiveOpsService | DataStore 원격 설정 60초 폴링: 점검·공지·확률 버프 이벤트 |
+| EconomyService | 재화 증감 단일 창구, 일일 초기화, 출석·플레이 보상, 방지권 구매 |
+| EnhanceService | 강화·판매·이름 짓기(필터링), 레이트 리밋+락, 15강 공지 |
+| ChatCommandService | `/강화 [보호]` `/판매` `/배틀 [닉]` `/확률` `/정보` `/도움말` |
+| BattleService | 도전/수락(15초), 승패·보상·Elo, 어뷰징 방지, 매분 일일 초기화 |
+| ShopService | 게임패스 조회, 골드 배수, ProcessReceipt(저장 확인 후 지급 완료) |
+| CodexService | 도감 칸 보상, 업적 20개 평가(강화·배틀·접속 시) |
+| LeaderboardService | OrderedDataStore 순위, 예산 확인, 퇴장 시+5분 주기 쓰기 |
+| AdminService | `/관리` 명령, 감사 로그. `ADMIN_USER_IDS` 가 비면 비활성 |
+| RateLimiter | 유틸 (생명주기 없음) |
+
+`src/server/vendor/ProfileStore.luau` — 외부 원본(커밋 45c9847, Apache 2.0). 고치지 않는다.
+
+### 클라이언트 (`src/client/controllers/`)
+
+Sound → Effects → Feed → OddsTable → Battle → Shop → Collection → UI 순서로 초기화.
+`ClientState` 가 서버가 보낸 데이터의 로컬 사본(표시 전용)을 들고 있다.
+
+### 공유 (`src/shared/`)
+
+- `Config/` — EnhanceTable, BattleConfig, EconomyConfig, Weapons, Products, Game, Achievements
+- `Pure/` — EnhanceLogic, BattleLogic, Format (Roblox API 없음, 테스트 대상)
+- `Types` (스키마 v3), `Remotes` (리모트 이름 한 곳), `Locale` (ko/en 각 163키)
+
+### 기획상 정해졌지만 비어 있는 곳
+
+`docs/기획서.md` 의 "알려진 빈 곳" 절에 정리했다. 요약하면 무기 교체 기능이 없어서
+도감 대부분과 업적 1개가 달성 불가능하고, 스킨·VIP 태그·사운드·무기 외형이 비어 있다.
+
+---
+
+## 5. 내린 결정과 이유 (다시 뒤집기 전에 이유부터 볼 것)
+
+| 결정 | 이유 |
+| --- | --- |
+| ProfileStore 를 vendor 로 포함 | 비개발자가 Wally 없이 실행할 수 있게. DataService 는 vendor 와 ServerPackages 둘 다 찾는다 |
+| `ForgeFever.rbxlx` 를 커밋 | Studio 더블클릭만으로 실행. **코드를 바꾸면 `rojo build -o ForgeFever.rbxlx` 로 다시 만들어 함께 커밋** |
+| LocalizationTable 대신 `Locale.luau` | 외부 의존 없이 바로 동작. 키 이름은 그대로 두고 나중에 옮길 수 있다 |
+| ProcessReceipt 는 PurchaseId 캐싱 방식 | ProfileStore 공식 문서 권장. 저장이 확인된 뒤에만 PurchaseGranted |
+| `purchaseHistory` 를 배열로 (v2) | 오래된 것부터 버려 200개 유지 |
+| 판매·파괴 시 지어 준 이름 유지 | 사용성. 원본 지시서의 "새 무기로 교체"와 다를 수 있음 → 기획 때 재검토 가능 |
+| 배틀 승패는 레벨, 레이팅은 표준 Elo(400) | 지시서 공식 그대로 + 레이팅은 업계 표준 |
+| 밸런스 수치는 원안 그대로 | 지시서: 제안만, 적용은 승인 후. 제안은 `docs/economy.md` |
+| 채팅 명령어를 서버 런타임에 생성 | 코드로 관리하려고. **Studio 실동작 미확인** |
+
+---
+
+## 6. 이 클라우드 환경에서 검증하는 법
+
+컨테이너는 세션마다 새로 만들어질 수 있다. 설치한 툴은 사라진다고 가정한다.
+
+```bash
+# 순수 로직 테스트·시뮬레이션용 Luau 실행기 (Lune 대체, 약 40초 빌드)
+cargo build --release --manifest-path tools/luaurun/Cargo.toml
+R=tools/luaurun/target/release/luaurun
+$R tests/run.luau                         # 테스트 73개
+$R tools/simulate_economy.luau            # 경제 시뮬레이션
+$R --check $(git ls-files '*.luau')       # 전 파일 문법 검사
+
+# 로블록스 툴체인 (crates.io 에서 빌드, 수 분)
+cargo install rojo selene stylua --locked
+rojo build -o ForgeFever.rbxlx            # 프로젝트가 실제로 빌드되는지
+stylua --check src tests tools
+```
+
+- **selene**: `selene generate-roblox-std` 는 프록시 TLS 때문에 실패한다. 임시 설정
+  (`std = "luau"`, `exclude = ["src/server/vendor/**"]`, `undefined_variable = "allow"`)을
+  스크래치 폴더에 만들어 `selene --config <그 파일> src tests tools` 로 돌린다.
+- **Lune** 은 이 환경에 없다. 개발자 PC 에서는 `lune run tests/run`.
+- **로블록스 공식 문서**: `create.roblox.com` 은 차단된다.
+  `https://raw.githubusercontent.com/Roblox/creator-docs/main/content/en-us/...` 로
+  같은 내용을 읽을 수 있다 (예: `reference/engine/classes/TextService.yaml`).
+- ProfileStore 문서는 `git clone https://github.com/MadStudioRoblox/ProfileStore` 의 `docs/`.
+
+코드를 바꾼 뒤 커밋 전 체크: 테스트 → `--check` → `stylua --check` → selene →
+`rojo build` → `ForgeFever.rbxlx` 갱신.
+
+---
+
+## 7. 미해결 · 대기 중
+
+- **경제 제안 승인 대기**: 파편 교환 50 → 30 (`docs/economy.md` 추천안). 미적용.
+- **Studio 실동작 확인 대기**: UI 렌더링, DataStore 저장, 채팅 명령어 등록.
+  개발자가 Output 창 오류를 보내 주면 그걸 기준으로 고친다.
+- `rokit.toml` 버전 문자열 미검증 (cargo 로 확인한 실제 최신: rojo 7.7.0, selene 0.31.0, stylua 2.5.2).
+- Roblox `AnalyticsService` 실제 연결 안 됨 (`AnalyticsService.sendToRoblox` 자리만 있음).
+- 개발자 입력 필요: `ADMIN_USER_IDS`, 게임패스·상품 ID, 사운드 에셋 ID.
