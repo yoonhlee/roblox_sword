@@ -30,6 +30,9 @@ local GameConfig = require(ConfigFolder:WaitForChild("Game"))
 local EconomyConfig = require(ConfigFolder:WaitForChild("EconomyConfig"))
 local Weapons = require(ConfigFolder:WaitForChild("Weapons"))
 local Products = require(ConfigFolder:WaitForChild("Products"))
+local EnhanceTable = require(ConfigFolder:WaitForChild("EnhanceTable"))
+
+local DataMigration = require(Shared:WaitForChild("Pure"):WaitForChild("DataMigration"))
 
 local DataService = {}
 DataService.Name = "DataService"
@@ -80,16 +83,26 @@ local function requireProfileStore(): any
 	)
 end
 
--- 새 플레이어의 기본 데이터. ProfileStore 가 이 표를 깊은 복사해서 쓴다.
+--[[
+	새 플레이어의 기본 데이터. ProfileStore 가 이 표를 깊은 복사해서 쓴다.
+
+	battleWins / battleLosses / rating / keepStreak / bestKeepStreak / ticketsUsed,
+	achievements, daily.battlesToday / opponentsToday 는 기획에서 빠진 기능(1:1 배틀, 업적)의
+	필드다. 저장 스키마를 그대로 두려고 남겨 두었고, 코드는 더 이상 읽지도 쓰지도 않는다.
+
+	swords 는 빈 표로 두고, 기본 검은 DataMigration.repair 가 넣는다.
+	(템플릿에 넣으면 Reconcile 이 옛 데이터의 swords 에도 끼워 넣어 마이그레이션과 엉킨다.)
+	v3 까지의 weapon 필드는 템플릿에 없다. 옛 데이터에만 남아 있다.
+]]
 local function buildTemplate(): Types.PlayerData
 	return {
 		schemaVersion = Types.SCHEMA_VERSION,
 		gold = EconomyConfig.STARTING_GOLD,
 		shards = EconomyConfig.STARTING_SHARDS,
-		weapon = {
-			id = Weapons.DEFAULT_ID,
-			level = 0,
-		},
+		swords = {},
+		equippedId = Weapons.DEFAULT_ID,
+		swordCapacity = 1,
+		pityPoints = 0,
 		protectTickets = EconomyConfig.STARTING_PROTECT_TICKETS,
 		stats = {
 			enhanceTries = 0,
@@ -119,55 +132,21 @@ local function buildTemplate(): Types.PlayerData
 	}
 end
 
---[[
-	저장된 데이터를 현재 스키마로 올린다.
-	Reconcile() 이 "빠진 키 채우기"를 담당하고, 여기서는 "형태가 바뀐 값"을 옮긴다.
-	기존 데이터를 절대 버리지 않는다.
-]]
+-- 저장된 데이터를 현재 스키마로 올린다. 실제 단계는 Pure/DataMigration 에 있다(테스트 대상).
+local MIGRATION_OPTIONS: DataMigration.Options = {
+	schemaVersion = Types.SCHEMA_VERSION,
+	purchaseHistoryLimit = Products.PURCHASE_HISTORY_LIMIT,
+	defaultWeaponId = Weapons.DEFAULT_ID,
+	maxLevel = EnhanceTable.MAX_LEVEL,
+	isKnownWeapon = function(id: string): boolean
+		return Weapons.get(id) ~= nil
+	end,
+}
+
 local function migrate(data: Types.PlayerData): Types.PlayerData
-	if data.schemaVersion == nil then
-		data.schemaVersion = 1
-	end
+	local _, isNewer = DataMigration.migrate(data, MIGRATION_OPTIONS)
 
-	-- 스키마 버전을 올릴 때마다 아래에 단계를 하나씩 추가한다.
-	-- 각 단계는 "이전 버전 데이터를 버리지 않고" 새 형태로 옮기기만 한다.
-
-	-- v1 → v2: purchaseHistory 를 딕셔너리에서 배열로 옮긴다.
-	-- (배열이어야 오래된 기록부터 버려 크기를 일정하게 유지할 수 있다)
-	if data.schemaVersion == 1 then
-		local history = data.purchaseHistory :: any
-		local migrated: { string } = {}
-
-		if type(history) == "table" then
-			for key, value in history do
-				if type(key) == "string" and value == true then
-					table.insert(migrated, key)
-				elseif type(value) == "string" then
-					table.insert(migrated, value) -- 이미 배열인 경우
-				end
-			end
-		end
-
-		while #migrated > Products.PURCHASE_HISTORY_LIMIT do
-			table.remove(migrated, 1)
-		end
-
-		data.purchaseHistory = migrated
-		data.schemaVersion = 2
-	end
-
-	-- v2 → v3: 업적 판정에 쓰는 통계를 추가한다.
-	-- Reconcile() 이 템플릿에서 채워 주지만, 순서에 기대지 않고 여기서도 보정한다.
-	if data.schemaVersion == 2 then
-		local stats = data.stats :: any
-		stats.keepStreak = stats.keepStreak or 0
-		stats.bestKeepStreak = stats.bestKeepStreak or 0
-		stats.ticketsUsed = stats.ticketsUsed or 0
-		data.schemaVersion = 3
-	end
-
-	if data.schemaVersion > Types.SCHEMA_VERSION then
-		-- 더 새로운 버전으로 저장된 데이터. 덮어쓰면 손실이 나므로 건드리지 않는다.
+	if isNewer then
 		warn(
 			`[DataService] 저장된 스키마 버전({data.schemaVersion})이 코드 버전({Types.SCHEMA_VERSION})보다 높습니다`
 		)
@@ -176,7 +155,11 @@ local function migrate(data: Types.PlayerData): Types.PlayerData
 	return data
 end
 
-local function fire(listeners: { (Player, Types.PlayerData) -> () }, player: Player, data: Types.PlayerData)
+local function fire(
+	listeners: { (Player, Types.PlayerData) -> () },
+	player: Player,
+	data: Types.PlayerData
+)
 	for _, listener in listeners do
 		local ok, err = xpcall(listener, debug.traceback, player, data)
 		if not ok then
@@ -269,12 +252,19 @@ local function onPlayerAdded(player: Player)
 	profile:Reconcile() -- 템플릿에 새로 생긴 키 채우기
 	migrate(profile.Data)
 
+	--[[
+		세션이 "밖에서" 끝난 경우(다른 서버가 같은 프로필을 열었을 때 등)만 처리한다.
+		우리가 EndSession() 을 부른 경우에는 그 전에 profiles[player] 를 비워 두므로
+		여기서 아무 일도 하지 않는다. (EndSession 은 이 신호를 그 자리에서 바로 부른다.
+		구분하지 않으면 나갈 때 리스너가 두 번 불리고, 차단 안내 대신 이 안내가 먼저 나간다.)
+	]]
 	profile.OnSessionEnd:Connect(function()
-		local data = profiles[player] and profiles[player].Data
-		profiles[player] = nil
-		if data then
-			fire(unloadingListeners, player, data)
+		if profiles[player] ~= profile then
+			return
 		end
+
+		profiles[player] = nil
+		fire(unloadingListeners, player, profile.Data)
 		player:Kick(Locale.get(nil, "error.session_end"))
 	end)
 
@@ -305,9 +295,9 @@ local function onPlayerRemoving(player: Player)
 		return
 	end
 
+	profiles[player] = nil
 	fire(unloadingListeners, player, profile.Data)
 	profile:EndSession()
-	profiles[player] = nil
 end
 
 function DataService.Init()
@@ -335,8 +325,7 @@ function DataService.Init()
 	dataChangedRemote = remotesFolder:WaitForChild(Remotes.Events.DataChanged) :: RemoteEvent
 
 	-- 설정 변경 (사운드 on/off, 언어)
-	local settingRemote =
-		remotesFolder:WaitForChild(Remotes.Functions.SetSetting) :: RemoteFunction
+	local settingRemote = remotesFolder:WaitForChild(Remotes.Functions.SetSetting) :: RemoteFunction
 	settingRemote.OnServerInvoke = function(player: Player, key: any, value: any)
 		local data = DataService.getActiveData(player)
 		if data == nil then

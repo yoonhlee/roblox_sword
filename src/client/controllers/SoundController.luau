@@ -17,7 +17,7 @@ SoundController.Name = "SoundController"
 local SOUND_IDS: { [string]: string } = {
 	success = "",
 	keep = "",
-	destroy = "",
+	fail = "",
 	protected = "",
 	click = "",
 }

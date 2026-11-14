@@ -22,15 +22,18 @@ type Service = {
 
 -- 의존 순서대로 나열한다. 여기 없는 모듈은 생명주기 없는 유틸로 간주하고 건너뛴다.
 local SERVICE_ORDER = {
+	"WorldService", -- 로비 바닥이 가장 먼저 있어야 한다
 	"DataService",
 	"AnalyticsService",
 	"LiveOpsService",
 	"EconomyService",
-	"EnhanceService",
-	"ChatCommandService",
-	"BattleService",
-	"ShopService",
 	"CodexService",
+	"EnhanceService",
+	"SwordService",
+	"TreadmillService",
+	"RaceService",
+	"ChatCommandService",
+	"ShopService",
 	"LeaderboardService",
 	"AdminService",
 }
@@ -57,7 +60,10 @@ local function runStage(stage: "Init" | "Start", services: { Service })
 		if not ok then
 			warn(`[Bootstrap] {service.Name or "?"}.{stage} 실패:\n{err}`)
 			if stage == "Init" then
-				error(`[Bootstrap] {service.Name or "?"}.Init 실패로 서버 시작을 중단합니다`, 0)
+				error(
+					`[Bootstrap] {service.Name or "?"}.Init 실패로 서버 시작을 중단합니다`,
+					0
+				)
 			end
 		end
 	end

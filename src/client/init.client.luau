@@ -4,7 +4,7 @@
 	controllers 폴더의 모듈을 정해진 순서대로 require → Init() → Start() 한다.
 
 	클라이언트는 "요청"과 "표시"만 한다.
-	확률 계산, 골드 증감, 레벨 변경, 배틀 결과는 전부 서버가 결정한다.
+	확률 계산, 골드 증감, 레벨 변경은 전부 서버가 결정한다.
 	서버 응답을 받기 전에는 어떤 결과 연출도 시작하지 않는다.
 ]]
 
@@ -19,9 +19,11 @@ local CONTROLLER_ORDER = {
 	"EffectsController",
 	"FeedController",
 	"OddsTableController",
-	"BattleController",
 	"ShopController",
+	"SwordController",
 	"CollectionController",
+	"LobbyController",
+	"RaceController",
 	"UIController",
 }
 

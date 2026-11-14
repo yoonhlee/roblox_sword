@@ -14,7 +14,8 @@ Game.DATASTORE_PROD = "ForgeFever_PROD"
 
 -- 랭킹용 OrderedDataStore
 Game.ORDERED_STORE_LEVEL = "ForgeFever_Level_v1"
-Game.ORDERED_STORE_RATING = "ForgeFever_Rating_v1"
+-- "ForgeFever_Rating_v1" 은 폐지된 1:1 배틀 레이팅 순위가 쓰던 이름이다.
+-- 예전 기록이 남아 있을 수 있으니 다른 용도로 다시 쓰지 말 것.
 
 -- 관리자 UserId 목록. [개발자 입력 필요] 본인 UserId 를 넣을 것.
 Game.ADMIN_USER_IDS = {} :: { number }

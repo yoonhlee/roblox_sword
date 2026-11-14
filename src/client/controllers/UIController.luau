@@ -22,6 +22,7 @@ local Format = require(Shared:WaitForChild("Pure"):WaitForChild("Format"))
 local ConfigFolder = Shared:WaitForChild("Config")
 local Weapons = require(ConfigFolder:WaitForChild("Weapons"))
 local EnhanceTable = require(ConfigFolder:WaitForChild("EnhanceTable"))
+local EnhanceLogic = require(Shared:WaitForChild("Pure"):WaitForChild("EnhanceLogic"))
 
 local controllers = script.Parent
 local ClientState = require(controllers.Parent:WaitForChild("ClientState"))
@@ -29,8 +30,8 @@ local FeedController = require(controllers:WaitForChild("FeedController"))
 local SoundController = require(controllers:WaitForChild("SoundController"))
 local EffectsController = require(controllers:WaitForChild("EffectsController"))
 local OddsTableController = require(controllers:WaitForChild("OddsTableController"))
-local BattleController = require(controllers:WaitForChild("BattleController"))
 local ShopController = require(controllers:WaitForChild("ShopController"))
+local SwordController = require(controllers:WaitForChild("SwordController"))
 local CollectionController = require(controllers:WaitForChild("CollectionController"))
 
 local UIController = {}
@@ -48,13 +49,12 @@ local TOUCH_MIN = 44 -- 최소 터치 영역(px)
 local NARROW_WIDTH = 700
 
 local busy = false
-local useProtect = false
 
 local gui: ScreenGui
 local uiScale: UIScale
 local goldLabel: TextLabel
 local shardLabel: TextLabel
-local ticketButton: TextButton
+local ticketLabel: TextLabel
 local centerFrame: Frame
 local weaponButton: TextButton
 local renamePanel: Frame
@@ -71,23 +71,13 @@ local bannerLabel: TextLabel
 local hintLabel: TextLabel
 local protectButton: TextButton
 local oddsTableButton: TextButton
-local sellButton: TextButton
-local battleButton: TextButton
+local swordsButton: TextButton
 local shopButton: TextButton
 local recordsButton: TextButton
 local enhanceButton: TextButton
-local confirmPanel: Frame
-local confirmLabel: TextLabel
-local confirmYes: TextButton
-local confirmNo: TextButton
 
 local enhanceRemote: RemoteFunction
-local sellRemote: RemoteFunction
-local ticketRemote: RemoteFunction
 local renameRemote: RemoteFunction
-
--- 확인 창은 하나를 돌려 쓴다. "예" 를 눌렀을 때 할 일을 여기에 담아 둔다.
-local confirmAction: (() -> ())? = nil
 
 local function corner(parent: Instance, radius: number)
 	local instance = Instance.new("UICorner")
@@ -188,13 +178,8 @@ local function build()
 		TextColor3 = COLOR_MUTED,
 		LayoutOrder = 2,
 	})
-	-- 방지권 표시는 눌러서 파편 교환까지 할 수 있게 버튼으로 둔다.
-	ticketButton = makeButton(topBar, {
-		Size = UDim2.new(0, 150, 0, TOUCH_MIN),
-		BackgroundTransparency = 1,
-		AutoButtonColor = false,
-		Font = Enum.Font.GothamMedium,
-		TextSize = 16,
+	ticketLabel = makeLabel(topBar, {
+		Size = UDim2.new(0, 150, 1, 0),
 		TextXAlignment = Enum.TextXAlignment.Left,
 		TextColor3 = COLOR_MUTED,
 		LayoutOrder = 3,
@@ -263,7 +248,7 @@ local function build()
 	bottomPanel.BorderSizePixel = 0
 	bottomPanel.AnchorPoint = Vector2.new(0.5, 1)
 	bottomPanel.Position = UDim2.new(0.5, 0, 1, -12)
-	bottomPanel.Size = UDim2.new(1, -24, 0, 312)
+	bottomPanel.Size = UDim2.new(1, -24, 0, 292)
 	bottomPanel.Parent = gui
 	corner(bottomPanel, 14)
 
@@ -301,56 +286,42 @@ local function build()
 		LayoutOrder = 3,
 	})
 
-	-- 보조 버튼 두 줄. 한 줄에 다섯 개를 넣으면 모바일에서 누르기 어려워진다.
-	local function makeActionRow(order: number): Frame
-		local row = Instance.new("Frame")
-		row.BackgroundTransparency = 1
-		row.Size = UDim2.new(1, 0, 0, TOUCH_MIN)
-		row.LayoutOrder = order
-		row.Parent = bottomPanel
+	-- 보조 버튼 한 줄 (확률표 / 검 / 기록 / 상점)
+	local actionRow = Instance.new("Frame")
+	actionRow.BackgroundTransparency = 1
+	actionRow.Size = UDim2.new(1, 0, 0, TOUCH_MIN)
+	actionRow.LayoutOrder = 4
+	actionRow.Parent = bottomPanel
 
-		local rowList = Instance.new("UIListLayout")
-		rowList.FillDirection = Enum.FillDirection.Horizontal
-		rowList.SortOrder = Enum.SortOrder.LayoutOrder
-		rowList.Padding = UDim.new(0, 8)
-		rowList.Parent = row
+	local actionList = Instance.new("UIListLayout")
+	actionList.FillDirection = Enum.FillDirection.Horizontal
+	actionList.SortOrder = Enum.SortOrder.LayoutOrder
+	actionList.Padding = UDim.new(0, 8)
+	actionList.Parent = actionRow
 
-		return row
-	end
-
-	local actionRowTop = makeActionRow(4)
-	local actionRowBottom = makeActionRow(5)
-
-	oddsTableButton = makeButton(actionRowTop, {
-		Size = UDim2.new(1 / 3, -6, 1, 0),
+	oddsTableButton = makeButton(actionRow, {
+		Size = UDim2.new(0.25, -6, 1, 0),
 		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
 		LayoutOrder = 1,
 	})
-	battleButton = makeButton(actionRowTop, {
-		Size = UDim2.new(1 / 3, -6, 1, 0),
+	swordsButton = makeButton(actionRow, {
+		Size = UDim2.new(0.25, -6, 1, 0),
 		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
 		LayoutOrder = 2,
 	})
-	recordsButton = makeButton(actionRowTop, {
-		Size = UDim2.new(1 / 3, -6, 1, 0),
+	recordsButton = makeButton(actionRow, {
+		Size = UDim2.new(0.25, -6, 1, 0),
 		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
 		LayoutOrder = 3,
 	})
-
-	sellButton = makeButton(actionRowBottom, {
-		Size = UDim2.new(0.5, -4, 1, 0),
+	shopButton = makeButton(actionRow, {
+		Size = UDim2.new(0.25, -6, 1, 0),
 		TextSize = 15,
 		Font = Enum.Font.GothamMedium,
-		LayoutOrder = 1,
-	})
-	shopButton = makeButton(actionRowBottom, {
-		Size = UDim2.new(0.5, -4, 1, 0),
-		TextSize = 15,
-		Font = Enum.Font.GothamMedium,
-		LayoutOrder = 2,
+		LayoutOrder = 4,
 	})
 
 	enhanceButton = makeButton(bottomPanel, {
@@ -358,13 +329,13 @@ local function build()
 		BackgroundColor3 = COLOR_ACCENT,
 		TextColor3 = Color3.fromRGB(24, 18, 10),
 		TextSize = 24,
-		LayoutOrder = 6,
+		LayoutOrder = 5,
 	})
 	statusLabel = makeLabel(bottomPanel, {
 		Size = UDim2.new(1, 0, 0, 18),
 		TextSize = 14,
 		TextColor3 = Color3.fromRGB(255, 140, 130),
-		LayoutOrder = 7,
+		LayoutOrder = 6,
 	})
 
 	-- 튜토리얼 안내. 첫 3회 강화까지만 보인다.
@@ -374,56 +345,6 @@ local function build()
 		TextColor3 = COLOR_ACCENT,
 		LayoutOrder = 0,
 		Visible = false,
-	})
-
-	-- 판매 확인 창
-	confirmPanel = Instance.new("Frame")
-	confirmPanel.Name = "SellConfirm"
-	confirmPanel.BackgroundColor3 = COLOR_PANEL
-	confirmPanel.BorderSizePixel = 0
-	confirmPanel.AnchorPoint = Vector2.new(0.5, 0.5)
-	confirmPanel.Position = UDim2.fromScale(0.5, 0.5)
-	confirmPanel.Size = UDim2.new(0.86, 0, 0, 170)
-	confirmPanel.Visible = false
-	confirmPanel.ZIndex = 30
-	confirmPanel.Parent = gui
-	corner(confirmPanel, 14)
-
-	local confirmSize = Instance.new("UISizeConstraint")
-	confirmSize.MaxSize = Vector2.new(420, math.huge)
-	confirmSize.Parent = confirmPanel
-
-	local confirmPadding = Instance.new("UIPadding")
-	confirmPadding.PaddingTop = UDim.new(0, 16)
-	confirmPadding.PaddingBottom = UDim.new(0, 16)
-	confirmPadding.PaddingLeft = UDim.new(0, 16)
-	confirmPadding.PaddingRight = UDim.new(0, 16)
-	confirmPadding.Parent = confirmPanel
-
-	local confirmList = Instance.new("UIListLayout")
-	confirmList.FillDirection = Enum.FillDirection.Vertical
-	confirmList.SortOrder = Enum.SortOrder.LayoutOrder
-	confirmList.Padding = UDim.new(0, 10)
-	confirmList.Parent = confirmPanel
-
-	confirmLabel = makeLabel(confirmPanel, {
-		Size = UDim2.new(1, 0, 0, 56),
-		TextSize = 16,
-		TextWrapped = true,
-		ZIndex = 31,
-		LayoutOrder = 1,
-	})
-	confirmYes = makeButton(confirmPanel, {
-		Size = UDim2.new(1, 0, 0, TOUCH_MIN),
-		BackgroundColor3 = COLOR_ACCENT,
-		TextColor3 = Color3.fromRGB(24, 18, 10),
-		ZIndex = 31,
-		LayoutOrder = 2,
-	})
-	confirmNo = makeButton(confirmPanel, {
-		Size = UDim2.new(1, 0, 0, TOUCH_MIN),
-		ZIndex = 31,
-		LayoutOrder = 3,
 	})
 
 	-- 이름 짓기 창
@@ -502,26 +423,37 @@ local function build()
 	end
 end
 
-local function weaponDisplayName(language: string, data: any): string
-	if data.weapon.customName and data.weapon.customName ~= "" then
-		return data.weapon.customName
+-- 착용 검의 이름 (지어 준 이름이 있으면 그것)
+local function weaponDisplayName(language: string, sword: any): string
+	if sword == nil then
+		return ""
 	end
 
-	local info = Weapons.get(data.weapon.id)
-	return if info then Locale.get(language, info.nameKey) else data.weapon.id
+	if sword.customName and sword.customName ~= "" then
+		return sword.customName
+	end
+
+	local info = Weapons.get(sword.id)
+	return if info then Locale.get(language, info.nameKey) else sword.id
 end
 
 local function render()
 	local language = ClientState.getLanguage()
 	local data = ClientState.getData()
 
+	-- 경주 중에는 화면 전체를, 대장간을 접었을 때는 무기와 조작 패널만 숨긴다(재화 바는 남긴다).
+	gui.Enabled = not ClientState.isInRace()
+	local forgeOpen = ClientState.isForgeOpen()
+	centerFrame.Visible = forgeOpen
+	bottomPanel.Visible = forgeOpen
+	if not forgeOpen then
+		renamePanel.Visible = false
+	end
+
 	oddsTableButton.Text = Locale.get(language, "ui.oddsTable")
-	battleButton.Text = Locale.get(language, "ui.battle")
+	swordsButton.Text = Locale.get(language, "ui.swords")
 	shopButton.Text = Locale.get(language, "ui.shop")
 	recordsButton.Text = Locale.get(language, "ui.records")
-	sellButton.Text = Locale.get(language, "ui.sell")
-	confirmYes.Text = Locale.get(language, "ui.confirm")
-	confirmNo.Text = Locale.get(language, "ui.cancel")
 	renameConfirm.Text = Locale.get(language, "ui.rename")
 	renameCancel.Text = Locale.get(language, "ui.cancel")
 
@@ -534,7 +466,6 @@ local function render()
 		enhanceButton.Text = Locale.get(language, "ui.loading")
 		enhanceButton.BackgroundColor3 = COLOR_DISABLED
 		enhanceButton.Active = false
-		sellButton.Active = false
 		return
 	end
 
@@ -564,22 +495,19 @@ local function render()
 
 	goldLabel.Text = Locale.get(language, "ui.gold", Format.comma(data.gold))
 	shardLabel.Text = Locale.get(language, "ui.shards", Format.comma(data.shards))
-	local exchangeable = math.floor(data.shards / EnhanceTable.SHARDS_PER_TICKET)
-	ticketButton.Text = if exchangeable > 0
-		then `{Locale.get(language, "ui.tickets", data.protectTickets)}  +`
-		else Locale.get(language, "ui.tickets", data.protectTickets)
-	ticketButton.TextColor3 = if exchangeable > 0 then COLOR_ACCENT else COLOR_MUTED
+	ticketLabel.Text = Locale.get(language, "ui.tickets", data.protectTickets)
 
-	weaponButton.Text = weaponDisplayName(language, data)
-	levelLabel.Text = Locale.get(language, "ui.level", data.weapon.level)
+	local sword = ClientState.getEquipped()
+	local useProtect = ClientState.getUseProtect()
 
-	protectButton.Text = `{if useProtect then "[v]" else "[ ]"} {Locale.get(language, "ui.useProtect")} ({data.protectTickets})`
+	weaponButton.Text = weaponDisplayName(language, sword)
+	levelLabel.Text = Locale.get(language, "ui.level", if sword then sword.level else 0)
+
+	protectButton.Text = `{if useProtect then "[v]" else "[ ]"} {Locale.get(
+		language,
+		"ui.useProtect"
+	)} ({data.protectTickets})`
 	protectButton.TextColor3 = if useProtect then COLOR_ACCENT else COLOR_MUTED
-
-	-- 레벨 0 무기는 판매가가 0 이라 팔 게 없다.
-	local sellValue = EnhanceTable.SellValue[data.weapon.level] or 0
-	sellButton.Active = not busy and sellValue > 0
-	sellButton.TextColor3 = if sellValue > 0 then COLOR_TEXT else COLOR_DISABLED
 
 	local odds = ClientState.getOdds()
 	if odds == nil then
@@ -591,7 +519,8 @@ local function render()
 
 	eventLabel.Visible = odds.eventName ~= nil
 	if odds.eventName ~= nil then
-		eventLabel.Text = Locale.get(language, "ui.eventActive", Locale.get(language, odds.eventName))
+		eventLabel.Text =
+			Locale.get(language, "ui.eventActive", Locale.get(language, odds.eventName))
 	end
 
 	if odds.cost <= 0 then
@@ -604,12 +533,18 @@ local function render()
 		return
 	end
 
+	-- 방지권이 효과를 내는 동안에는 바뀐 확률(실패 0, 그만큼 유지)을 보여 준다.
+	local shown: EnhanceLogic.Odds = odds
+	if ClientState.isProtectActive() then
+		shown = EnhanceLogic.applyProtect(odds)
+	end
+
 	oddsLabel.Text = Locale.get(
 		language,
 		"ui.odds",
-		Format.percent(odds.success),
-		Format.percent(odds.keep),
-		Format.percent(odds.destroy)
+		Format.percent(shown.success),
+		Format.percent(shown.keep),
+		Format.percent(shown.fail)
 	)
 	costLabel.Text = Locale.get(language, "ui.cost", Format.comma(odds.cost))
 
@@ -645,7 +580,7 @@ local function requestEnhance()
 	render()
 
 	local ok, response = pcall(function()
-		return enhanceRemote:InvokeServer(useProtect)
+		return enhanceRemote:InvokeServer(ClientState.getUseProtect())
 	end)
 
 	busy = false
@@ -675,106 +610,6 @@ local function requestEnhance()
 	end
 
 	render()
-end
-
-local function requestSell()
-	if busy then
-		return
-	end
-
-	busy = true
-	statusLabel.Text = ""
-	render()
-
-	local ok, response = pcall(function()
-		return sellRemote:InvokeServer()
-	end)
-
-	busy = false
-
-	if not ok or type(response) ~= "table" then
-		showError("unknown")
-		render()
-		return
-	end
-
-	if response.ok ~= true then
-		showError(tostring(response.reason))
-		render()
-		return
-	end
-
-	ClientState.setOdds(response.odds)
-	FeedController.pushRaw(
-		Locale.get(ClientState.getLanguage(), "chat.sold", Format.comma(response.goldGained)),
-		COLOR_ACCENT
-	)
-	SoundController.play("click")
-	render()
-end
-
--- 확인 창을 띄운다. 예를 누르면 action 이 실행된다.
-local function showConfirm(text: string, action: () -> ())
-	confirmLabel.Text = text
-	confirmAction = action
-	confirmPanel.Visible = true
-end
-
-local function requestTicketExchange()
-	if busy then
-		return
-	end
-	busy = true
-	render()
-
-	local ok, response = pcall(function()
-		return ticketRemote:InvokeServer("shards", 1)
-	end)
-
-	busy = false
-
-	if not ok or type(response) ~= "table" then
-		showError("unknown")
-		render()
-		return
-	end
-
-	if response.ok ~= true then
-		showError(tostring(response.reason))
-		render()
-		return
-	end
-
-	FeedController.pushRaw(
-		Locale.get(ClientState.getLanguage(), "ui.exchanged", response.tickets),
-		COLOR_ACCENT
-	)
-	SoundController.play("click")
-	render()
-end
-
-local function openExchangeConfirm()
-	local data = ClientState.getData()
-	if data == nil then
-		return
-	end
-
-	if data.shards < EnhanceTable.SHARDS_PER_TICKET then
-		showError("not_enough_shards")
-		return
-	end
-
-	showConfirm(
-		Locale.get(
-			ClientState.getLanguage(),
-			"ui.exchangeConfirm",
-			EnhanceTable.SHARDS_PER_TICKET,
-			Format.comma(data.shards)
-		),
-		function()
-			task.spawn(requestTicketExchange)
-		end
-	)
 end
 
 local function requestRename()
@@ -807,34 +642,11 @@ local function requestRename()
 	render()
 end
 
-local function openSellConfirm()
-	local data = ClientState.getData()
-	if data == nil then
-		return
-	end
-
-	local value = EnhanceTable.SellValue[data.weapon.level] or 0
-	if value <= 0 then
-		showError("nothing_to_sell")
-		return
-	end
-
-	showConfirm(
-		Locale.get(ClientState.getLanguage(), "ui.sellConfirm", Format.comma(value)),
-		function()
-			task.spawn(requestSell)
-		end
-	)
-end
-
 function UIController.Init()
 	build()
 
 	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
 	enhanceRemote = remotesFolder:WaitForChild(Remotes.Functions.Enhance) :: RemoteFunction
-	sellRemote = remotesFolder:WaitForChild(Remotes.Functions.SellWeapon) :: RemoteFunction
-	ticketRemote =
-		remotesFolder:WaitForChild(Remotes.Functions.BuyProtectTicket) :: RemoteFunction
 	renameRemote = remotesFolder:WaitForChild(Remotes.Functions.RenameWeapon) :: RemoteFunction
 
 	local dataChanged = remotesFolder:WaitForChild(Remotes.Events.DataChanged) :: RemoteEvent
@@ -844,8 +656,7 @@ function UIController.Init()
 		end
 	end)
 
-	local liveOpsRemote =
-		remotesFolder:WaitForChild(Remotes.Events.LiveOpsChanged) :: RemoteEvent
+	local liveOpsRemote = remotesFolder:WaitForChild(Remotes.Events.LiveOpsChanged) :: RemoteEvent
 	liveOpsRemote.OnClientEvent:Connect(function(config: any)
 		if type(config) == "table" then
 			ClientState.setLiveOps(config)
@@ -859,17 +670,16 @@ function UIController.Init()
 	end)
 
 	protectButton.Activated:Connect(function()
-		useProtect = not useProtect
 		SoundController.play("click")
-		render()
+		ClientState.setUseProtect(not ClientState.getUseProtect())
+	end)
+
+	swordsButton.Activated:Connect(function()
+		SwordController.toggle()
 	end)
 
 	oddsTableButton.Activated:Connect(function()
 		OddsTableController.toggle()
-	end)
-
-	battleButton.Activated:Connect(function()
-		BattleController.openTargetList()
 	end)
 
 	shopButton.Activated:Connect(function()
@@ -880,27 +690,9 @@ function UIController.Init()
 		CollectionController.toggle()
 	end)
 
-	sellButton.Activated:Connect(openSellConfirm)
-
-	confirmYes.Activated:Connect(function()
-		confirmPanel.Visible = false
-		local action = confirmAction
-		confirmAction = nil
-		if action then
-			action()
-		end
-	end)
-
-	confirmNo.Activated:Connect(function()
-		confirmPanel.Visible = false
-		confirmAction = nil
-	end)
-
-	ticketButton.Activated:Connect(openExchangeConfirm)
-
 	weaponButton.Activated:Connect(function()
-		local data = ClientState.getData()
-		renameBox.Text = if data and data.weapon.customName then data.weapon.customName else ""
+		local sword = ClientState.getEquipped()
+		renameBox.Text = if sword and sword.customName then sword.customName else ""
 		renamePanel.Visible = true
 	end)
 
@@ -928,6 +720,9 @@ function UIController.Start()
 			end)
 
 			if ok and type(response) == "table" and response.ok == true then
+				if type(response.liveOps) == "table" then
+					ClientState.setLiveOps(response.liveOps)
+				end
 				ClientState.setData(response.data)
 				ClientState.setOdds(response.odds)
 				return
