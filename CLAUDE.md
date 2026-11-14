@@ -9,6 +9,7 @@ Claude Code 가 이 저장소에서 일할 때 가장 먼저 읽는 파일이다
 | 문서 | 내용 |
 | --- | --- |
 | `docs/기획서.md` | 게임 기획의 기준. 제안·승인 기록도 여기 쌓는다 |
+| `docs/기획-현황-브리프.md` | 동료용 요약: 바뀐 기획, 판단 근거, 결정 대기 우선순위. 기획서가 바뀌면 함께 갱신 |
 | `docs/원본-지시서.md` | 처음 받은 지시서 원문 (확률표, 공식, 정책 요구사항 전체) |
 | `docs/economy.md` | 경제 시뮬레이션 결과와 밸런스 제안 |
 | `docs/시작하기.md` | 개발자가 Studio 에서 실행하는 법 |
@@ -48,7 +49,14 @@ Claude Code 가 이 저장소에서 일할 때 가장 먼저 읽는 파일이다
 
 - 밸런스 수치 (`src/shared/Config/*` 의 확률·비용·보상). 제안만 하고 승인 후 적용.
 - 공개 확률표. 플레이어 신뢰 문제라 특히 신중히.
-- Robux 로 확률 결과를 직접 파는 상품은 만들지 않는다. 필요해지면 먼저 확인.
+- **골드는 Robux 로 직접도 간접적으로도 얻을 수 없다** (기획서 P6). 골드 팩 금지,
+  골드 획득량을 늘리는 유료 혜택도 금지. 로블록스 정책상 "Robux 로 살 수 있는 화폐로 하는
+  강화"는 유료 확률형 아이템이기 때문이다.
+- 유료 확률형 상품은 **방지권 확률형 1종만** 승인됐다 (P8). 다른 확률형 상품은 먼저 확인.
+  구현할 때는 기획서 3-7 의 정책 요구사항(사기 전 % 공개·합계 100%, 방지권 켜면 표시
+  확률 변경, `ArePaidRandomItemsRestricted` 유저에겐 확률형 숨김, 결제 재시도 시 재추첨
+  금지)을 지킨다.
+- 게임 안의 모든 확률은 화면에 공개한다 (P10).
 
 ---
 
@@ -92,6 +100,12 @@ Claude Code 가 이 저장소에서 일할 때 가장 먼저 읽는 파일이다
 ## 4. 현재 상태 (2026-11-14 기준)
 
 원본 지시서의 Phase 0~7 **전부 구현 완료**. Luau 46개 파일, 테스트 73개 통과.
+
+> ⚠️ **기획 전환 (2026-11-14 승인, 코드 미반영)**: 1:1 배틀 폐지, 게임 목표를
+> **추격 생존 경주**로, 강화를 **2구간**(1~10강 실패 없음 / 11~20강 실패 시 10강 복귀)으로
+> 바꾼다. 같은 날 골드 팩·게임패스·업적·방지권 골드 구매도 삭제가 승인됐다.
+> 아래 표는 *지금 코드* 기준이다. 새로 만들 때는 `docs/기획서.md` 를 기준으로
+> 하고, 배틀 코드 위에 기능을 쌓지 않는다. 결정 대기 항목(D1~D9)은 기획서 5절.
 
 ### 서버 (`src/server/services/`, 부트스트랩 순서대로)
 
@@ -168,6 +182,9 @@ stylua --check src tests tools
   (`std = "luau"`, `exclude = ["src/server/vendor/**"]`, `undefined_variable = "allow"`)을
   스크래치 폴더에 만들어 `selene --config <그 파일> src tests tools` 로 돌린다.
 - **Lune** 은 이 환경에 없다. 개발자 PC 에서는 `lune run tests/run`.
+- **로블록스 정책 문서**: 유료 확률형 아이템 정책 원문은
+  `.../content/en-us/production/monetization/paid-random-items.md`.
+  `devforum.roblox.com` 은 이 환경에서 접속이 안 된다.
 - **로블록스 공식 문서**: `create.roblox.com` 은 차단된다.
   `https://raw.githubusercontent.com/Roblox/creator-docs/main/content/en-us/...` 로
   같은 내용을 읽을 수 있다 (예: `reference/engine/classes/TextService.yaml`).
@@ -180,7 +197,7 @@ stylua --check src tests tools
 
 ## 7. 미해결 · 대기 중
 
-- **경제 제안 승인 대기**: 파편 교환 50 → 30 (`docs/economy.md` 추천안). 미적용.
+- **기획 결정 대기**: `docs/기획서.md` 5절 (D2 는 P5 로 해결됨).
 - **Studio 실동작 확인 대기**: UI 렌더링, DataStore 저장, 채팅 명령어 등록.
   개발자가 Output 창 오류를 보내 주면 그걸 기준으로 고친다.
 - `rokit.toml` 버전 문자열 미검증 (cargo 로 확인한 실제 최신: rojo 7.7.0, selene 0.31.0, stylua 2.5.2).
