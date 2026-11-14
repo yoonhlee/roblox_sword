@@ -40,7 +40,14 @@ Claude Code 가 이 저장소에서 일할 때 가장 먼저 읽는 파일이다
 
 - 밸런스 수치 (`src/shared/Config/*` 의 확률·비용·보상). 제안만 하고 승인 후 적용.
 - 공개 확률표. 플레이어 신뢰 문제라 특히 신중히.
-- Robux 로 확률 결과를 직접 파는 상품은 만들지 않는다. 필요해지면 먼저 확인.
+- **골드는 Robux 로 직접도 간접적으로도 얻을 수 없다** (기획서 P6). 골드 팩 금지,
+  골드 획득량을 늘리는 유료 혜택도 금지. 로블록스 정책상 "Robux 로 살 수 있는 화폐로 하는
+  강화"는 유료 확률형 아이템이기 때문이다.
+- 유료 확률형 상품은 **방지권 확률형 1종만** 승인됐다 (P8). 다른 확률형 상품은 먼저 확인.
+  구현할 때는 기획서 3-7 의 정책 요구사항(사기 전 % 공개·합계 100%, 방지권 켜면 표시
+  확률 변경, `ArePaidRandomItemsRestricted` 유저에겐 확률형 숨김, 결제 재시도 시 재추첨
+  금지)을 지킨다.
+- 게임 안의 모든 확률은 화면에 공개한다 (P10).
 
 ---
 
@@ -164,6 +171,9 @@ stylua --check src tests tools
   (`std = "luau"`, `exclude = ["src/server/vendor/**"]`, `undefined_variable = "allow"`)을
   스크래치 폴더에 만들어 `selene --config <그 파일> src tests tools` 로 돌린다.
 - **Lune** 은 이 환경에 없다. 개발자 PC 에서는 `lune run tests/run`.
+- **로블록스 정책 문서**: 유료 확률형 아이템 정책 원문은
+  `.../content/en-us/production/monetization/paid-random-items.md`.
+  `devforum.roblox.com` 은 이 환경에서 접속이 안 된다.
 - **로블록스 공식 문서**: `create.roblox.com` 은 차단된다.
   `https://raw.githubusercontent.com/Roblox/creator-docs/main/content/en-us/...` 로
   같은 내용을 읽을 수 있다 (예: `reference/engine/classes/TextService.yaml`).
