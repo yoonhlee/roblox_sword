@@ -29,6 +29,11 @@ Locale.Strings = {
 		["rarity.rare"] = "희귀",
 		["rarity.epic"] = "영웅",
 		["rarity.legend"] = "전설",
+		["heat.cold"] = "식은 쇠",
+		["heat.red"] = "붉게 달굼",
+		["heat.orange"] = "주황 불꽃",
+		["heat.yellow"] = "노란 불꽃",
+		["heat.white"] = "흰 불꽃",
 
 		-- UI
 		["ui.enhance"] = "강화하기",
@@ -200,6 +205,11 @@ Locale.Strings = {
 		["rarity.rare"] = "Rare",
 		["rarity.epic"] = "Epic",
 		["rarity.legend"] = "Legend",
+		["heat.cold"] = "Cold iron",
+		["heat.red"] = "Red hot",
+		["heat.orange"] = "Orange flame",
+		["heat.yellow"] = "Yellow flame",
+		["heat.white"] = "White flame",
 
 		["ui.enhance"] = "Forge",
 		["ui.enhancing"] = "Hammering...",

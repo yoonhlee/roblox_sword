@@ -16,6 +16,8 @@ require("./DataMigration.spec")
 require("./RaceLogic.spec")
 require("./TreadmillLogic.spec")
 require("./DrawLogic.spec")
+require("./VisualLogic.spec")
+require("./UILayout.spec")
 require("./RateLimiter.spec")
 require("./Locale.spec")
 

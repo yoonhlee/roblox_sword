@@ -29,6 +29,10 @@ local CONTROLLER_ORDER = {
 
 local controllersFolder = script:WaitForChild("controllers")
 
+-- 화면 상태·배치 관리는 컨트롤러가 화면을 만들기 전에 준비돼 있어야 한다.
+local ScreenManager = require(script:WaitForChild("ui"):WaitForChild("ScreenManager"))
+ScreenManager.init()
+
 local function loadController(name: string): Controller
 	local module = controllersFolder:WaitForChild(name)
 	assert(module:IsA("ModuleScript"), `[Client] 컨트롤러 모듈이 아닙니다: {name}`)

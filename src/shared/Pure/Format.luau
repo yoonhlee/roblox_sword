@@ -54,6 +54,62 @@ function Format.duration(seconds: number): string
 	return string.format("%d:%02d", minutes, secs)
 end
 
+--[[
+	큰 숫자를 줄여 쓴다 (화면 공간이 좁은 곳: 재화 칩, 보상 표시).
+	  한국어: 9,999 까지 그대로, 1.2만 · 123만 · 1.2억 · 4.9억 · 1.2조
+	  영어:   999 까지 그대로, 1.2K · 120K · 1.2M · 1.05B · 1.2T
+	소수는 한 자리(영어 B·T 는 두 자리까지), 끝의 0 은 뗀다. 음수는 부호를 붙인다.
+]]
+local KO_UNITS = { { 1e12, "조" }, { 1e8, "억" }, { 1e4, "만" } }
+local EN_UNITS = { { 1e12, "T" }, { 1e9, "B" }, { 1e6, "M" }, { 1e3, "K" } }
+
+local function trimNumber(value: number, decimals: number): string
+	local scale = 10 ^ decimals
+	local rounded = math.floor(value * scale + 0.5) / scale
+	local text = string.format("%." .. decimals .. "f", rounded)
+	if string.find(text, "%.") then
+		text = string.gsub(text, "0+$", "")
+		text = string.gsub(text, "%.$", "")
+	end
+	return text
+end
+
+function Format.short(value: number, language: string?): string
+	local negative = value < 0
+	local amount = math.abs(value)
+	local isEnglish = language == "en"
+	local units = if isEnglish then EN_UNITS else KO_UNITS
+	local step = if isEnglish then 1e3 else 1e4 -- 한 단위가 다음 단위가 되는 배수
+
+	local text: string? = nil
+	for index, unit in units do
+		local size, suffix = unit[1], unit[2]
+		if amount < size then
+			continue
+		end
+
+		local scaled = amount / size
+		local decimals = if scaled >= 100 then 0 elseif isEnglish and size >= 1e9 then 2 else 1
+		local shown = trimNumber(scaled, decimals)
+
+		-- 반올림해서 한 단위가 꽉 차면(예: 9,999.99만 → 10000만) 바로 위 단위로 쓴다.
+		local larger = units[index - 1]
+		if larger ~= nil and (tonumber(shown) or 0) >= step then
+			shown = trimNumber(amount / larger[1], 1)
+			suffix = larger[2]
+		end
+
+		text = shown .. suffix
+		break
+	end
+
+	local result = text or Format.comma(amount)
+	if negative and result ~= "0" then
+		return "-" .. result
+	end
+	return result
+end
+
 -- 확률 막대나 로그에 쓰는 짧은 비율 표기. 0.25 → "25%"
 function Format.ratio(ratio: number, decimals: number?): string
 	return Format.percent(ratio * 100, decimals)

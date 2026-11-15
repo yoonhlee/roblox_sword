@@ -1,17 +1,23 @@
 <roblox version="4">
-  <Item class="ReplicatedStorage" referent="0">
+  <Item class="Lighting" referent="0">
+    <Properties>
+      <string name="Name">Lighting</string>
+      <token name="Technology">4</token>
+    </Properties>
+  </Item>
+  <Item class="ReplicatedStorage" referent="1">
     <Properties>
       <string name="Name">ReplicatedStorage</string>
     </Properties>
-    <Item class="Folder" referent="1">
+    <Item class="Folder" referent="2">
       <Properties>
         <string name="Name">Shared</string>
       </Properties>
-      <Item class="Folder" referent="2">
+      <Item class="Folder" referent="3">
         <Properties>
           <string name="Name">Config</string>
         </Properties>
-        <Item class="ModuleScript" referent="3">
+        <Item class="ModuleScript" referent="4">
           <Properties>
             <string name="Name">EconomyConfig</string>
             <string name="Source"><![CDATA[--!strict
@@ -78,7 +84,7 @@ return EconomyConfig
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="4">
+        <Item class="ModuleScript" referent="5">
           <Properties>
             <string name="Name">EnhanceTable</string>
             <string name="Source"><![CDATA[--!strict
@@ -180,7 +186,7 @@ return EnhanceTable
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="5">
+        <Item class="ModuleScript" referent="6">
           <Properties>
             <string name="Name">Game</string>
             <string name="Source"><![CDATA[--!strict
@@ -224,7 +230,102 @@ return Game
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="6">
+        <Item class="ModuleScript" referent="7">
+          <Properties>
+            <string name="Name">Palette</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	Palette — 화면(UI)과 세계(로비·코스·검)가 함께 쓰는 색 (통합 기획서 8-1·8-2절).
+
+	숫자(0~255)로만 둔다. Roblox 의 Color3 로 바꾸는 일은 쓰는 쪽이 한다
+	(그래서 Studio 밖 테스트에서도 읽을 수 있다).
+	값은 추천치(Claude 초기값)이고 Studio 에서 다듬는다. 방향은 확정이다.
+]]
+
+export type RGB = { number }
+
+local Palette = {}
+
+-- 화면 기본색
+Palette.UI = {
+	bg = { 24, 21, 26 }, -- 바탕
+	panel = { 34, 30, 38 }, -- 창
+	sub = { 52, 46, 58 }, -- 보조 칸
+	line = { 70, 62, 78 }, -- 구분선
+	text = { 240, 236, 230 },
+	muted = { 168, 160, 172 },
+	ember = { 226, 142, 58 }, -- 불꽃 주황 (강조)
+	emberDark = { 150, 84, 28 }, -- 강조 버튼 아래 띠
+	ink = { 24, 18, 10 }, -- 밝은 버튼 위 글자
+	outline = { 12, 10, 14 }, -- 굵은 글자 테두리
+	disabled = { 72, 68, 76 },
+	danger = { 220, 64, 56 }, -- 닫기 X
+	gold = { 255, 208, 112 },
+	shard = { 140, 210, 255 },
+	ticket = { 120, 220, 150 },
+	success = { 226, 142, 58 },
+	keep = { 198, 198, 198 },
+	fail = { 255, 120, 108 },
+	protect = { 140, 210, 255 },
+	event = { 140, 210, 255 },
+}
+
+-- 검 등급 색 (관례: 일반 회색, 희귀 파랑, 영웅 보라, 전설 금색)
+Palette.RARITY = {
+	common = { 180, 180, 180 },
+	rare = { 79, 163, 255 },
+	epic = { 181, 101, 255 },
+	legend = { 255, 200, 61 },
+} :: { [string]: RGB }
+
+--[[
+	레벨 색: 쇠를 달구는 색. minLevel 이상이면 그 단계다(위에서부터 차례로 확인한다).
+	glow: 칼날 주위로 빛이 번지는 정도(0 없음 ~ 1 최대), sparks: 불티를 날리는지.
+	nameKey: 단계 이름 Locale 키.
+]]
+export type HeatTier = {
+	minLevel: number,
+	rgb: RGB,
+	glow: number,
+	sparks: boolean,
+	nameKey: string,
+}
+
+Palette.HEAT_TIERS = {
+	{ minLevel = 0, rgb = { 154, 160, 168 }, glow = 0, sparks = false, nameKey = "heat.cold" },
+	{ minLevel = 5, rgb = { 224, 80, 58 }, glow = 0.2, sparks = false, nameKey = "heat.red" },
+	{ minLevel = 10, rgb = { 255, 138, 42 }, glow = 0.4, sparks = false, nameKey = "heat.orange" },
+	{ minLevel = 15, rgb = { 255, 224, 112 }, glow = 0.7, sparks = true, nameKey = "heat.yellow" },
+	{ minLevel = 20, rgb = { 255, 255, 255 }, glow = 1, sparks = true, nameKey = "heat.white" },
+} :: { HeatTier }
+
+-- 세계(블록) 재료 색
+Palette.WORLD = {
+	stone = { 74, 66, 80 }, -- 검은 돌: 바닥·담·관문
+	stoneDark = { 52, 46, 58 },
+	cobble = { 110, 98, 104 }, -- 돌길
+	wood = { 106, 70, 48 }, -- 그을린 나무
+	iron = { 58, 60, 66 }, -- 무쇠
+	steel = { 91, 95, 102 }, -- 칼날 바탕
+	roof = { 91, 47, 42 }, -- 지붕
+	brick = { 77, 58, 63 }, -- 화덕·굴뚝
+	leather = { 138, 96, 68 }, -- 풀무
+	beard = { 232, 226, 216 },
+	skin = { 217, 180, 140 },
+	apron = { 90, 58, 38 },
+	ember = { 226, 142, 58 },
+	molten = { 255, 90, 30 },
+	moltenHot = { 255, 160, 64 },
+	gold = { 255, 208, 112 },
+	mountain = { 59, 35, 53 },
+	glass = { 140, 210, 255 },
+}
+
+return Palette
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="8">
           <Properties>
             <string name="Name">Products</string>
             <string name="Source"><![CDATA[--!strict
@@ -429,7 +530,7 @@ return Products
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="7">
+        <Item class="ModuleScript" referent="9">
           <Properties>
             <string name="Name">RaceConfig</string>
             <string name="Source"><![CDATA[--!strict
@@ -537,7 +638,83 @@ return RaceConfig
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="8">
+        <Item class="ModuleScript" referent="10">
+          <Properties>
+            <string name="Name">VisualConfig</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	VisualConfig — 화면 배치와 연출 시간 (통합 기획서 8-1절). 전부 추천치·기술 값이다.
+
+	배치 단위: "디자인 칸". 실제 화면 크기에 맞춰 배율(scale)을 곱한다.
+	기준 화면(REFERENCE)은 휴대폰 가로에서 로블록스 위쪽 메뉴 줄을 뺀 크기쯤이다.
+]]
+
+local VisualConfig = {}
+
+VisualConfig.Layout = {
+	referenceWidth = 860,
+	referenceHeight = 360,
+	minScale = 0.74, -- 이보다 작게 줄이지 않는다 (버튼 60칸 × 0.74 ≈ 44px)
+	maxScale = 1.5,
+
+	margin = 12, -- 화면 가장자리 여백
+	gap = 8,
+
+	chipHeight = 36,
+	chipWidth = 116,
+	chipCount = 3, -- 골드 · 파편 · 방지권
+
+	menuButton = 60, -- 메뉴 버튼 한 변
+	menuCount = 4, -- 대장간 · 검 · 도감 · 상점
+
+	raceButtonWidth = 180,
+	raceButtonHeight = 60,
+	raceStatusHeight = 44,
+
+	lobbyStatusWidth = 220, -- 트레드밀 진행 막대
+	lobbyStatusHeight = 44,
+	feedLineHeight = 36,
+
+	modalMaxWidth = 720,
+	forgeMaxWidth = 900,
+
+	raceHudWidth = 520,
+	raceHudHeight = 76,
+	abilitySize = 72, -- 특수 능력 버튼 자리 (D16, 지금은 숨김)
+	resultWidth = 420,
+	resultHeight = 232,
+
+	-- 휴대폰 이동 컨트롤 자리 (실제 화면 px). 로비·경주 중에는 이 자리를 비운다.
+	joystickWidth = 280,
+	joystickHeight = 180,
+	jumpWidth = 200,
+	jumpHeight = 190,
+
+	minTouchPx = 44, -- 가장 작은 버튼의 실제 크기
+}
+
+-- 강화 결과 연출 길이 (초). 레벨이 높을수록 길다. 화면을 한 번 더 누르면 건너뛴다.
+VisualConfig.Reveal = {
+	{ minLevel = 0, seconds = 0.5, strikes = 1 },
+	{ minLevel = 10, seconds = 1.0, strikes = 2 },
+	{ minLevel = 15, seconds = 2.0, strikes = 3 },
+}
+
+-- 글자 크기 단계 (디자인 칸). 가장 작은 단계 × minScale 이 12px 밑으로 내려가지 않게 17 이상 (17 × 0.74 ≈ 12.6).
+VisualConfig.Text = {
+	small = 17,
+	body = 18,
+	label = 20,
+	title = 26,
+	big = 34,
+	huge = 96,
+}
+
+return VisualConfig
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="11">
           <Properties>
             <string name="Name">Weapons</string>
             <string name="Source"><![CDATA[--!strict
@@ -640,7 +817,7 @@ return Weapons
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="9">
+        <Item class="ModuleScript" referent="12">
           <Properties>
             <string name="Name">World</string>
             <string name="Source"><![CDATA[--!strict
@@ -720,7 +897,7 @@ return World
           </Properties>
         </Item>
       </Item>
-      <Item class="ModuleScript" referent="10">
+      <Item class="ModuleScript" referent="13">
         <Properties>
           <string name="Name">Locale</string>
           <string name="Source"><![CDATA[--!strict
@@ -754,6 +931,11 @@ Locale.Strings = {
 		["rarity.rare"] = "희귀",
 		["rarity.epic"] = "영웅",
 		["rarity.legend"] = "전설",
+		["heat.cold"] = "식은 쇠",
+		["heat.red"] = "붉게 달굼",
+		["heat.orange"] = "주황 불꽃",
+		["heat.yellow"] = "노란 불꽃",
+		["heat.white"] = "흰 불꽃",
 
 		-- UI
 		["ui.enhance"] = "강화하기",
@@ -925,6 +1107,11 @@ Locale.Strings = {
 		["rarity.rare"] = "Rare",
 		["rarity.epic"] = "Epic",
 		["rarity.legend"] = "Legend",
+		["heat.cold"] = "Cold iron",
+		["heat.red"] = "Red hot",
+		["heat.orange"] = "Orange flame",
+		["heat.yellow"] = "Yellow flame",
+		["heat.white"] = "White flame",
 
 		["ui.enhance"] = "Forge",
 		["ui.enhancing"] = "Hammering...",
@@ -1118,11 +1305,11 @@ return Locale
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Folder" referent="11">
+      <Item class="Folder" referent="14">
         <Properties>
           <string name="Name">Pure</string>
         </Properties>
-        <Item class="ModuleScript" referent="12">
+        <Item class="ModuleScript" referent="15">
           <Properties>
             <string name="Name">DataMigration</string>
             <string name="Source"><![CDATA[--!strict
@@ -1303,7 +1490,7 @@ return DataMigration
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="13">
+        <Item class="ModuleScript" referent="16">
           <Properties>
             <string name="Name">DrawLogic</string>
             <string name="Source"><![CDATA[--!strict
@@ -1457,7 +1644,7 @@ return DrawLogic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="14">
+        <Item class="ModuleScript" referent="17">
           <Properties>
             <string name="Name">EnhanceLogic</string>
             <string name="Source"><![CDATA[--!strict
@@ -1618,7 +1805,7 @@ return EnhanceLogic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="15">
+        <Item class="ModuleScript" referent="18">
           <Properties>
             <string name="Name">Format</string>
             <string name="Source"><![CDATA[--!strict
@@ -1677,6 +1864,62 @@ function Format.duration(seconds: number): string
 	return string.format("%d:%02d", minutes, secs)
 end
 
+--[[
+	큰 숫자를 줄여 쓴다 (화면 공간이 좁은 곳: 재화 칩, 보상 표시).
+	  한국어: 9,999 까지 그대로, 1.2만 · 123만 · 1.2억 · 4.9억 · 1.2조
+	  영어:   999 까지 그대로, 1.2K · 120K · 1.2M · 1.05B · 1.2T
+	소수는 한 자리(영어 B·T 는 두 자리까지), 끝의 0 은 뗀다. 음수는 부호를 붙인다.
+]]
+local KO_UNITS = { { 1e12, "조" }, { 1e8, "억" }, { 1e4, "만" } }
+local EN_UNITS = { { 1e12, "T" }, { 1e9, "B" }, { 1e6, "M" }, { 1e3, "K" } }
+
+local function trimNumber(value: number, decimals: number): string
+	local scale = 10 ^ decimals
+	local rounded = math.floor(value * scale + 0.5) / scale
+	local text = string.format("%." .. decimals .. "f", rounded)
+	if string.find(text, "%.") then
+		text = string.gsub(text, "0+$", "")
+		text = string.gsub(text, "%.$", "")
+	end
+	return text
+end
+
+function Format.short(value: number, language: string?): string
+	local negative = value < 0
+	local amount = math.abs(value)
+	local isEnglish = language == "en"
+	local units = if isEnglish then EN_UNITS else KO_UNITS
+	local step = if isEnglish then 1e3 else 1e4 -- 한 단위가 다음 단위가 되는 배수
+
+	local text: string? = nil
+	for index, unit in units do
+		local size, suffix = unit[1], unit[2]
+		if amount < size then
+			continue
+		end
+
+		local scaled = amount / size
+		local decimals = if scaled >= 100 then 0 elseif isEnglish and size >= 1e9 then 2 else 1
+		local shown = trimNumber(scaled, decimals)
+
+		-- 반올림해서 한 단위가 꽉 차면(예: 9,999.99만 → 10000만) 바로 위 단위로 쓴다.
+		local larger = units[index - 1]
+		if larger ~= nil and (tonumber(shown) or 0) >= step then
+			shown = trimNumber(amount / larger[1], 1)
+			suffix = larger[2]
+		end
+
+		text = shown .. suffix
+		break
+	end
+
+	local result = text or Format.comma(amount)
+	if negative and result ~= "0" then
+		return "-" .. result
+	end
+	return result
+end
+
 -- 확률 막대나 로그에 쓰는 짧은 비율 표기. 0.25 → "25%"
 function Format.ratio(ratio: number, decimals: number?): string
 	return Format.percent(ratio * 100, decimals)
@@ -1686,7 +1929,7 @@ return Format
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="16">
+        <Item class="ModuleScript" referent="19">
           <Properties>
             <string name="Name">RaceLogic</string>
             <string name="Source"><![CDATA[--!strict
@@ -2005,7 +2248,7 @@ return RaceLogic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="17">
+        <Item class="ModuleScript" referent="20">
           <Properties>
             <string name="Name">SwordLogic</string>
             <string name="Source"><![CDATA[--!strict
@@ -2200,7 +2443,7 @@ return SwordLogic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="18">
+        <Item class="ModuleScript" referent="21">
           <Properties>
             <string name="Name">TreadmillLogic</string>
             <string name="Source"><![CDATA[--!strict
@@ -2253,8 +2496,315 @@ return TreadmillLogic
 ]]></string>
           </Properties>
         </Item>
+        <Item class="ModuleScript" referent="22">
+          <Properties>
+            <string name="Name">UILayout</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	UILayout — 화면 구역 배치 계산 (순수 함수, 통합 기획서 8-1절).
+
+	입력: 화면에서 쓸 수 있는 영역의 실제 크기(px). 로블록스 위쪽 메뉴 줄과 노치는 이미 빠진 크기다
+	(모든 ScreenGui 가 ScreenInsets = CoreUISafeInsets 를 쓴다). touch 는 휴대폰처럼 이동 컨트롤이 있는지.
+
+	출력: 배율(scale)과 "디자인 칸" 단위의 구역 사각형. 화면 코드는 모든 ScreenGui 에 UIScale = scale 을 걸고,
+	이 사각형 그대로 Position/Size 를 정한다. 그래서 구역끼리 겹치지 않는다는 것을 여기 테스트로 보장할 수 있다.
+
+	화면 상태별로 동시에 보이는 구역:
+	  로비   chips, menu, raceCluster, feedLobby, lobbyStatus  (+ 비워 둘 자리 joystick, jump)
+	  대장간 chips, forgePanel   (이동 컨트롤은 숨긴다)
+	  창     modal               (어둡게 덮고 맨 위)
+	  경주   raceHud, raceAbility (+ joystick, jump) / 탈락 후 raceResult (이동 컨트롤 숨김)
+]]
+
+local UILayout = {}
+
+export type Rect = { x: number, y: number, w: number, h: number }
+
+export type Config = {
+	referenceWidth: number,
+	referenceHeight: number,
+	minScale: number,
+	maxScale: number,
+	margin: number,
+	gap: number,
+	chipHeight: number,
+	chipWidth: number,
+	chipCount: number,
+	menuButton: number,
+	menuCount: number,
+	raceButtonWidth: number,
+	raceButtonHeight: number,
+	raceStatusHeight: number,
+	lobbyStatusWidth: number,
+	lobbyStatusHeight: number,
+	feedLineHeight: number,
+	modalMaxWidth: number,
+	forgeMaxWidth: number,
+	raceHudWidth: number,
+	raceHudHeight: number,
+	abilitySize: number,
+	resultWidth: number,
+	resultHeight: number,
+	joystickWidth: number,
+	joystickHeight: number,
+	jumpWidth: number,
+	jumpHeight: number,
+	minTouchPx: number,
+}
+
+export type Layout = {
+	scale: number,
+	width: number, -- 디자인 칸 단위 화면 크기
+	height: number,
+	touch: boolean,
+
+	chips: Rect,
+	menu: Rect,
+	menuColumns: number, -- 1 = 세로 한 줄, 2 = 두 줄, 4 = 가로 한 줄
+	raceCluster: Rect,
+	feedLobby: Rect,
+	lobbyStatus: Rect,
+	forgePanel: Rect,
+	modal: Rect,
+	raceHud: Rect,
+	raceAbility: Rect,
+	raceResult: Rect,
+
+	joystick: Rect, -- touch 가 false 면 크기 0
+	jump: Rect,
+}
+
+local function rect(x: number, y: number, w: number, h: number): Rect
+	return { x = x, y = y, w = math.max(0, w), h = math.max(0, h) }
+end
+
+function UILayout.overlaps(a: Rect, b: Rect): boolean
+	if a.w <= 0 or a.h <= 0 or b.w <= 0 or b.h <= 0 then
+		return false
+	end
+	return a.x < b.x + b.w and b.x < a.x + a.w and a.y < b.y + b.h and b.y < a.y + a.h
+end
+
+function UILayout.inside(inner: Rect, width: number, height: number): boolean
+	local eps = 1e-6
+	return inner.x >= -eps
+		and inner.y >= -eps
+		and inner.x + inner.w <= width + eps
+		and inner.y + inner.h <= height + eps
+end
+
+function UILayout.compute(realWidth: number, realHeight: number, touch: boolean, c: Config): Layout
+	local scale = math.clamp(
+		math.min(realWidth / c.referenceWidth, realHeight / c.referenceHeight),
+		c.minScale,
+		c.maxScale
+	)
+	local W = realWidth / scale
+	local H = realHeight / scale
+	local m = c.margin
+	local g = c.gap
+
+	-- 이동 컨트롤 자리 (실제 px → 디자인 칸)
+	local joystick = if touch
+		then rect(
+			0,
+			H - c.joystickHeight / scale,
+			c.joystickWidth / scale,
+			c.joystickHeight / scale
+		)
+		else rect(0, H, 0, 0)
+	local jump = if touch
+		then rect(
+			W - c.jumpWidth / scale,
+			H - c.jumpHeight / scale,
+			c.jumpWidth / scale,
+			c.jumpHeight / scale
+		)
+		else rect(W, H, 0, 0)
+
+	-- 위쪽 왼쪽: 재화 칩 한 줄
+	local chipsWidth = c.chipCount * c.chipWidth + (c.chipCount - 1) * g
+	local chips = rect(m, m, chipsWidth, c.chipHeight)
+
+	-- 왼쪽 메뉴: 칩 아래. 세로 한 줄 → 두 줄 → 가로 한 줄 순서로 들어가는 모양을 고른다.
+	local menuTop = chips.y + chips.h + g
+	local menuBottomLimit = (if touch then joystick.y else H) - g
+	local b = c.menuButton
+	local count = c.menuCount
+
+	local function menuRect(columns: number): Rect
+		local rows = math.ceil(count / columns)
+		return rect(m, menuTop, columns * b + (columns - 1) * g, rows * b + (rows - 1) * g)
+	end
+
+	local menuColumns = 1
+	local menu = menuRect(1)
+	if menu.y + menu.h > menuBottomLimit then
+		menuColumns = 2
+		menu = menuRect(2)
+		if menu.y + menu.h > menuBottomLimit then
+			menuColumns = count
+			menu = menuRect(count)
+		end
+	end
+
+	-- 오른쪽 위: 경주 버튼 + 상태 한 줄
+	local raceCluster = rect(
+		W - m - c.raceButtonWidth,
+		m,
+		c.raceButtonWidth,
+		c.raceButtonHeight + g + c.raceStatusHeight
+	)
+
+	-- 위쪽 가운데: 피드 한 줄 (왼쪽 칩·메뉴와 오른쪽 경주 버튼 사이)
+	-- (메뉴는 어떤 모양이든 칩 줄보다 아래에서 시작하므로 칩 오른쪽이 기준이다.)
+	local feedLeft = chips.x + chips.w + g
+	local feedRight = raceCluster.x - g
+	local feedLobby = rect(feedLeft, m, feedRight - feedLeft, c.feedLineHeight)
+
+	-- 아래 가운데: 트레드밀 진행 막대 (조이스틱과 점프 버튼 사이)
+	local bottomLeft = joystick.x + joystick.w + g
+	local bottomRight = jump.x - g
+	local statusWidth = math.min(c.lobbyStatusWidth, bottomRight - bottomLeft)
+	local lobbyStatus = rect(
+		bottomLeft + ((bottomRight - bottomLeft) - statusWidth) / 2,
+		H - m - c.lobbyStatusHeight,
+		statusWidth,
+		c.lobbyStatusHeight
+	)
+	if not touch then
+		lobbyStatus = rect(
+			(W - c.lobbyStatusWidth) / 2,
+			H - m - c.lobbyStatusHeight,
+			c.lobbyStatusWidth,
+			c.lobbyStatusHeight
+		)
+	end
+
+	-- 대장간: 칩 아래 화면 대부분 (이동 컨트롤은 숨기므로 신경 쓰지 않는다)
+	local forgeTop = chips.y + chips.h + g
+	local forgeWidth = math.min(c.forgeMaxWidth, W - 2 * m)
+	local forgePanel = rect((W - forgeWidth) / 2, forgeTop, forgeWidth, H - forgeTop - m)
+
+	-- 큰 창 (확률표·검·기록·상점)
+	local modalWidth = math.min(c.modalMaxWidth, W - 2 * m)
+	local modal = rect((W - modalWidth) / 2, m, modalWidth, H - 2 * m)
+
+	-- 경주
+	local hudWidth = math.min(c.raceHudWidth, W - 2 * m)
+	local raceHud = rect((W - hudWidth) / 2, m, hudWidth, c.raceHudHeight)
+	local abilityRight = (if touch then jump.x else W - m) - g
+	local raceAbility =
+		rect(abilityRight - c.abilitySize, H - m - c.abilitySize, c.abilitySize, c.abilitySize)
+	local resultWidth = math.min(c.resultWidth, W - 2 * m)
+	local resultHeight = math.min(c.resultHeight, H - raceHud.y - raceHud.h - g - m)
+	local raceResult = rect((W - resultWidth) / 2, H - m - resultHeight, resultWidth, resultHeight)
+
+	return {
+		scale = scale,
+		width = W,
+		height = H,
+		touch = touch,
+		chips = chips,
+		menu = menu,
+		menuColumns = menuColumns,
+		raceCluster = raceCluster,
+		feedLobby = feedLobby,
+		lobbyStatus = lobbyStatus,
+		forgePanel = forgePanel,
+		modal = modal,
+		raceHud = raceHud,
+		raceAbility = raceAbility,
+		raceResult = raceResult,
+		joystick = joystick,
+		jump = jump,
+	}
+end
+
+-- 화면 상태별로 함께 보이는 구역 이름 (테스트와 ScreenManager 가 같은 목록을 쓴다)
+UILayout.MODE_ZONES = {
+	lobby = { "chips", "menu", "raceCluster", "feedLobby", "lobbyStatus", "joystick", "jump" },
+	forge = { "chips", "forgePanel" },
+	modal = { "modal" },
+	race = { "raceHud", "raceAbility", "joystick", "jump" },
+	raceOut = { "raceHud", "raceResult" },
+} :: { [string]: { string } }
+
+return UILayout
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="23">
+          <Properties>
+            <string name="Name">VisualLogic</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	VisualLogic — 레벨 색·연출 길이를 고르는 순수 함수 (통합 기획서 8-1절).
+	Roblox API 와 require 가 없다. 색표·시간표는 인자로 받는다(Config/Palette, Config/VisualConfig).
+]]
+
+local VisualLogic = {}
+
+export type HeatTier = {
+	minLevel: number,
+	rgb: { number },
+	glow: number,
+	sparks: boolean,
+	nameKey: string,
+}
+
+export type RevealStep = {
+	minLevel: number,
+	seconds: number,
+	strikes: number,
+}
+
+-- minLevel 오름차순 표에서 level 에 해당하는 마지막 줄의 번호. 표가 비어 있으면 0.
+local function stepIndex(list: { any }, level: number): number
+	local found = 0
+	for index, entry in list do
+		if level >= entry.minLevel then
+			found = index
+		end
+	end
+	if found == 0 and #list > 0 then
+		return 1
+	end
+	return found
+end
+
+-- 레벨의 달구는 색 단계
+function VisualLogic.heatTier(level: number, tiers: { HeatTier }): HeatTier
+	return tiers[stepIndex(tiers, level)]
+end
+
+-- 강화 결과 연출 단계 (강화하기 "전" 레벨 기준: 높은 곳에서 두드릴수록 긴장감이 길다)
+function VisualLogic.reveal(level: number, steps: { RevealStep }): RevealStep
+	return steps[stepIndex(steps, level)]
+end
+
+--[[
+	화면 배율. 기준 크기에 맞춰 줄이거나 키우되 [minScale, maxScale] 안에서.
+	가로·세로 중 더 빡빡한 쪽에 맞춘다.
+]]
+function VisualLogic.scaleFor(
+	width: number,
+	height: number,
+	referenceWidth: number,
+	referenceHeight: number,
+	minScale: number,
+	maxScale: number
+): number
+	local scale = math.min(width / referenceWidth, height / referenceHeight)
+	return math.clamp(scale, minScale, maxScale)
+end
+
+return VisualLogic
+]]></string>
+          </Properties>
+        </Item>
       </Item>
-      <Item class="ModuleScript" referent="19">
+      <Item class="ModuleScript" referent="24">
         <Properties>
           <string name="Name">Remotes</string>
           <string name="Source"><![CDATA[--!strict
@@ -2333,7 +2883,7 @@ return Remotes
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="20">
+      <Item class="ModuleScript" referent="25">
         <Properties>
           <string name="Name">Types</string>
           <string name="Source"><![CDATA[--!strict
@@ -2607,11 +3157,11 @@ return Types
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="21">
+  <Item class="ServerScriptService" referent="26">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Script" referent="22">
+    <Item class="Script" referent="27">
       <Properties>
         <string name="Name">Server</string>
         <token name="RunContext">0</token>
@@ -2702,11 +3252,11 @@ runStage("Start", services)
 print(`[Bootstrap] 서비스 {#services}개 시작 완료`)
 ]]></string>
       </Properties>
-      <Item class="Folder" referent="23">
+      <Item class="Folder" referent="28">
         <Properties>
           <string name="Name">services</string>
         </Properties>
-        <Item class="ModuleScript" referent="24">
+        <Item class="ModuleScript" referent="29">
           <Properties>
             <string name="Name">AdminService</string>
             <string name="Source"><![CDATA[--!strict
@@ -3199,7 +3749,7 @@ return AdminService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="25">
+        <Item class="ModuleScript" referent="30">
           <Properties>
             <string name="Name">AnalyticsService</string>
             <string name="Source"><![CDATA[--!strict
@@ -3341,7 +3891,7 @@ return AnalyticsService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="26">
+        <Item class="ModuleScript" referent="31">
           <Properties>
             <string name="Name">ChatCommandService</string>
             <string name="Source"><![CDATA[--!strict
@@ -3579,7 +4129,7 @@ return ChatCommandService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="27">
+        <Item class="ModuleScript" referent="32">
           <Properties>
             <string name="Name">CodexService</string>
             <string name="Source"><![CDATA[--!strict
@@ -3668,7 +4218,7 @@ return CodexService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="28">
+        <Item class="ModuleScript" referent="33">
           <Properties>
             <string name="Name">CourseBuilder</string>
             <string name="Source"><![CDATA[--!strict
@@ -3958,7 +4508,7 @@ return CourseBuilder
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="29">
+        <Item class="ModuleScript" referent="34">
           <Properties>
             <string name="Name">DataService</string>
             <string name="Source"><![CDATA[--!strict
@@ -4330,7 +4880,7 @@ return DataService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="30">
+        <Item class="ModuleScript" referent="35">
           <Properties>
             <string name="Name">EconomyService</string>
             <string name="Source"><![CDATA[--!strict
@@ -4556,7 +5106,7 @@ return EconomyService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="31">
+        <Item class="ModuleScript" referent="36">
           <Properties>
             <string name="Name">EnhanceService</string>
             <string name="Source"><![CDATA[--!strict
@@ -4973,7 +5523,7 @@ return EnhanceService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="32">
+        <Item class="ModuleScript" referent="37">
           <Properties>
             <string name="Name">LeaderboardService</string>
             <string name="Source"><![CDATA[--!strict
@@ -5180,7 +5730,7 @@ return LeaderboardService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="33">
+        <Item class="ModuleScript" referent="38">
           <Properties>
             <string name="Name">LiveOpsService</string>
             <string name="Source"><![CDATA[--!strict
@@ -5443,7 +5993,7 @@ return LiveOpsService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="34">
+        <Item class="ModuleScript" referent="39">
           <Properties>
             <string name="Name">RaceService</string>
             <string name="Source"><![CDATA[--!strict
@@ -6270,7 +6820,7 @@ return RaceService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="35">
+        <Item class="ModuleScript" referent="40">
           <Properties>
             <string name="Name">RateLimiter</string>
             <string name="Source"><![CDATA[--!strict
@@ -6382,7 +6932,7 @@ return RateLimiter
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="36">
+        <Item class="ModuleScript" referent="41">
           <Properties>
             <string name="Name">ShopService</string>
             <string name="Source"><![CDATA[--!strict
@@ -6875,7 +7425,7 @@ return ShopService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="37">
+        <Item class="ModuleScript" referent="42">
           <Properties>
             <string name="Name">SwordService</string>
             <string name="Source"><![CDATA[--!strict
@@ -7054,7 +7604,7 @@ return SwordService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="38">
+        <Item class="ModuleScript" referent="43">
           <Properties>
             <string name="Name">TreadmillService</string>
             <string name="Source"><![CDATA[--!strict
@@ -7206,7 +7756,7 @@ return TreadmillService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="39">
+        <Item class="ModuleScript" referent="44">
           <Properties>
             <string name="Name">WorldService</string>
             <string name="Source"><![CDATA[--!strict
@@ -7538,11 +8088,11 @@ return WorldService
           </Properties>
         </Item>
       </Item>
-      <Item class="Folder" referent="40">
+      <Item class="Folder" referent="45">
         <Properties>
           <string name="Name">vendor</string>
         </Properties>
-        <Item class="ModuleScript" referent="41">
+        <Item class="ModuleScript" referent="46">
           <Properties>
             <string name="Name">ProfileStore</string>
             <string name="Source">--[[
@@ -9793,26 +10343,32 @@ return ProfileStore</string>
       </Item>
     </Item>
   </Item>
-  <Item class="ServerStorage" referent="42">
+  <Item class="ServerStorage" referent="47">
     <Properties>
       <string name="Name">ServerStorage</string>
     </Properties>
   </Item>
-  <Item class="SoundService" referent="43">
+  <Item class="SoundService" referent="48">
     <Properties>
       <string name="Name">SoundService</string>
       <bool name="RespectFilteringEnabled">true</bool>
     </Properties>
   </Item>
-  <Item class="StarterPlayer" referent="44">
+  <Item class="StarterGui" referent="49">
+    <Properties>
+      <string name="Name">StarterGui</string>
+      <token name="ScreenOrientation">2</token>
+    </Properties>
+  </Item>
+  <Item class="StarterPlayer" referent="50">
     <Properties>
       <string name="Name">StarterPlayer</string>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="45">
+    <Item class="StarterPlayerScripts" referent="51">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="46">
+      <Item class="LocalScript" referent="52">
         <Properties>
           <string name="Name">Client</string>
           <string name="Source"><![CDATA[--!strict
@@ -9846,6 +10402,10 @@ local CONTROLLER_ORDER = {
 
 local controllersFolder = script:WaitForChild("controllers")
 
+-- 화면 상태·배치 관리는 컨트롤러가 화면을 만들기 전에 준비돼 있어야 한다.
+local ScreenManager = require(script:WaitForChild("ui"):WaitForChild("ScreenManager"))
+ScreenManager.init()
+
 local function loadController(name: string): Controller
 	local module = controllersFolder:WaitForChild(name)
 	assert(module:IsA("ModuleScript"), `[Client] 컨트롤러 모듈이 아닙니다: {name}`)
@@ -9877,7 +10437,7 @@ runStage("Init", controllers)
 runStage("Start", controllers)
 ]]></string>
         </Properties>
-        <Item class="ModuleScript" referent="47">
+        <Item class="ModuleScript" referent="53">
           <Properties>
             <string name="Name">ClientState</string>
             <string name="Source"><![CDATA[--!strict
@@ -10023,11 +10583,11 @@ return ClientState
 ]]></string>
           </Properties>
         </Item>
-        <Item class="Folder" referent="48">
+        <Item class="Folder" referent="54">
           <Properties>
             <string name="Name">controllers</string>
           </Properties>
-          <Item class="ModuleScript" referent="49">
+          <Item class="ModuleScript" referent="55">
             <Properties>
               <string name="Name">CollectionController</string>
               <string name="Source"><![CDATA[--!strict
@@ -10451,7 +11011,7 @@ return CollectionController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="50">
+          <Item class="ModuleScript" referent="56">
             <Properties>
               <string name="Name">EffectsController</string>
               <string name="Source"><![CDATA[--!strict
@@ -10628,7 +11188,7 @@ return EffectsController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="51">
+          <Item class="ModuleScript" referent="57">
             <Properties>
               <string name="Name">FeedController</string>
               <string name="Source"><![CDATA[--!strict
@@ -10901,7 +11461,7 @@ return FeedController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="52">
+          <Item class="ModuleScript" referent="58">
             <Properties>
               <string name="Name">LobbyController</string>
               <string name="Source"><![CDATA[--!strict
@@ -11337,7 +11897,7 @@ return LobbyController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="53">
+          <Item class="ModuleScript" referent="59">
             <Properties>
               <string name="Name">OddsTableController</string>
               <string name="Source"><![CDATA[--!strict
@@ -11674,7 +12234,7 @@ return OddsTableController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="54">
+          <Item class="ModuleScript" referent="60">
             <Properties>
               <string name="Name">RaceController</string>
               <string name="Source"><![CDATA[--!strict
@@ -12339,7 +12899,7 @@ return RaceController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="55">
+          <Item class="ModuleScript" referent="61">
             <Properties>
               <string name="Name">ShopController</string>
               <string name="Source"><![CDATA[--!strict
@@ -12790,7 +13350,7 @@ return ShopController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="56">
+          <Item class="ModuleScript" referent="62">
             <Properties>
               <string name="Name">SoundController</string>
               <string name="Source"><![CDATA[--!strict
@@ -12849,7 +13409,7 @@ return SoundController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="57">
+          <Item class="ModuleScript" referent="63">
             <Properties>
               <string name="Name">SwordController</string>
               <string name="Source"><![CDATA[--!strict
@@ -13300,7 +13860,7 @@ return SwordController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="58">
+          <Item class="ModuleScript" referent="64">
             <Properties>
               <string name="Name">UIController</string>
               <string name="Source"><![CDATA[--!strict
@@ -14045,16 +14605,1036 @@ return UIController
             </Properties>
           </Item>
         </Item>
+        <Item class="Folder" referent="65">
+          <Properties>
+            <string name="Name">ui</string>
+          </Properties>
+          <Item class="ModuleScript" referent="66">
+            <Properties>
+              <string name="Name">Components</string>
+              <string name="Source"><![CDATA[--!strict
+--[[
+	Components — 모든 화면이 쓰는 부품 (통합 기획서 8-1절 공통 규칙).
+
+	- 닫기는 언제나 오른쪽 위 빨간 네모 X
+	- 못 누르는 버튼은 회색 (setEnabled)
+	- 모든 버튼은 누르면 살짝 작아졌다 돌아온다
+	- 밝은 버튼의 글자는 흰색 + 검은 테두리 (결정 2)
+	- 아이콘은 이미지 없이 도형으로 그린다 (결정 6). 이미지 ID 가 생기면 iconImage 자리에 넣는다.
+
+	크기는 전부 "디자인 칸"이다. ScreenGui 의 UIScale 이 실제 화면에 맞춰 곱한다.
+]]
+
+local TweenService = game:GetService("TweenService")
+
+local Theme = require(script.Parent:WaitForChild("Theme"))
+
+local Components = {}
+
+export type ButtonStyle = "primary" | "secondary" | "danger" | "ghost"
+
+local C = Theme.color
+
+--------------------------------------------------------------------------------
+-- 기본 장식
+--------------------------------------------------------------------------------
+
+function Components.corner(parent: Instance, radius: number?)
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, radius or Theme.radius)
+	corner.Parent = parent
+	return corner
+end
+
+function Components.round(parent: Instance)
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0.5, 0)
+	corner.Parent = parent
+	return corner
+end
+
+function Components.padding(parent: Instance, all: number, horizontal: number?)
+	local pad = Instance.new("UIPadding")
+	pad.PaddingTop = UDim.new(0, all)
+	pad.PaddingBottom = UDim.new(0, all)
+	pad.PaddingLeft = UDim.new(0, horizontal or all)
+	pad.PaddingRight = UDim.new(0, horizontal or all)
+	pad.Parent = parent
+	return pad
+end
+
+-- 테두리 선 (Border) 또는 글자 테두리 (Contextual)
+function Components.stroke(parent: Instance, color: Color3, thickness: number, onText: boolean?)
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = color
+	stroke.Thickness = thickness
+	stroke.ApplyStrokeMode = if onText
+		then Enum.ApplyStrokeMode.Contextual
+		else Enum.ApplyStrokeMode.Border
+	stroke.Parent = parent
+	return stroke
+end
+
+function Components.list(
+	parent: Instance,
+	direction: "vertical" | "horizontal",
+	gap: number,
+	align: Enum.HorizontalAlignment?
+): UIListLayout
+	local layout = Instance.new("UIListLayout")
+	layout.FillDirection = if direction == "vertical"
+		then Enum.FillDirection.Vertical
+		else Enum.FillDirection.Horizontal
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, gap)
+	if align then
+		layout.HorizontalAlignment = align
+	end
+	if direction == "horizontal" then
+		layout.VerticalAlignment = Enum.VerticalAlignment.Center
+	end
+	layout.Parent = parent
+	return layout
+end
+
+-- 위는 밝고 아래로 갈수록 어두운 입체감 (버튼·칩)
+function Components.bevel(parent: Instance, strength: number?)
+	local gradient = Instance.new("UIGradient")
+	local bottom = 1 - (strength or 0.25)
+	gradient.Color = ColorSequence.new(Color3.new(1, 1, 1), Color3.new(bottom, bottom, bottom))
+	gradient.Rotation = 90
+	gradient.Parent = parent
+	return gradient
+end
+
+--------------------------------------------------------------------------------
+-- 틀
+--------------------------------------------------------------------------------
+
+function Components.frame(parent: Instance, props: { [string]: any }?): Frame
+	local frame = Instance.new("Frame")
+	frame.BackgroundTransparency = 1
+	frame.BorderSizePixel = 0
+	frame.Size = UDim2.fromScale(1, 1)
+	if props then
+		for key, value in props do
+			(frame :: any)[key] = value
+		end
+	end
+	frame.Parent = parent
+	return frame
+end
+
+-- 창 바탕: 어두운 쇳빛 + 얇은 테두리
+function Components.panel(parent: Instance, props: { [string]: any }?): Frame
+	local frame = Components.frame(parent, props)
+	frame.BackgroundColor3 = C.panel
+	frame.BackgroundTransparency = 0.04
+	Components.corner(frame, Theme.radiusLarge)
+	Components.stroke(frame, C.line, 1.5)
+	return frame
+end
+
+--------------------------------------------------------------------------------
+-- 글자
+--------------------------------------------------------------------------------
+
+export type LabelOptions = {
+	text: string?,
+	size: number?, -- Theme.text 의 값
+	color: Color3?,
+	font: Enum.Font?,
+	outline: boolean?, -- 굵은 검은 테두리 (밝은 큰 글씨용)
+	align: Enum.TextXAlignment?,
+	wrap: boolean?,
+	order: number?,
+	height: number?,
+}
+
+function Components.label(parent: Instance, options: LabelOptions?): TextLabel
+	local o = options or {}
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.BorderSizePixel = 0
+	label.Font = o.font or Theme.font.body
+	label.TextSize = o.size or Theme.text.body
+	label.TextColor3 = o.color or C.text
+	label.Text = o.text or ""
+	label.TextXAlignment = o.align or Enum.TextXAlignment.Left
+	label.TextWrapped = o.wrap == true
+	label.TextTruncate = if o.wrap then Enum.TextTruncate.None else Enum.TextTruncate.AtEnd
+	label.Size = UDim2.new(1, 0, 0, o.height or math.ceil((o.size or Theme.text.body) * 1.35))
+	label.LayoutOrder = o.order or 0
+	if o.outline then
+		Components.stroke(label, C.outline, Theme.strokeText, true)
+	end
+	label.Parent = parent
+	return label
+end
+
+--------------------------------------------------------------------------------
+-- 버튼
+--------------------------------------------------------------------------------
+
+local STYLE_COLORS: { [string]: { bg: Color3, text: Color3, outline: boolean } } = {
+	primary = { bg = C.ember, text = C.white, outline = true },
+	secondary = { bg = C.sub, text = C.text, outline = false },
+	danger = { bg = C.danger, text = C.white, outline = true },
+	ghost = { bg = C.panel, text = C.muted, outline = false },
+}
+
+-- 누르면 살짝 작아졌다 돌아온다
+local function attachPress(button: GuiButton)
+	local scale = Instance.new("UIScale")
+	scale.Parent = button
+
+	button.MouseButton1Down:Connect(function()
+		if button.Active then
+			TweenService:Create(scale, Theme.motion.press, { Scale = 0.94 }):Play()
+		end
+	end)
+	local function release()
+		TweenService:Create(scale, Theme.motion.release, { Scale = 1 }):Play()
+	end
+	button.MouseButton1Up:Connect(release)
+	button.MouseLeave:Connect(release)
+end
+
+export type ButtonOptions = {
+	text: string?,
+	style: ButtonStyle?,
+	size: number?,
+	order: number?,
+	height: number?,
+	width: UDim?, -- 기본은 부모 너비 전체
+}
+
+function Components.button(parent: Instance, options: ButtonOptions?): TextButton
+	local o = options or {}
+	local style = o.style or "secondary"
+	local colors = STYLE_COLORS[style]
+
+	local button = Instance.new("TextButton")
+	button.AutoButtonColor = false
+	button.BorderSizePixel = 0
+	button.BackgroundColor3 = colors.bg
+	button.Font = Theme.font.display
+	button.TextSize = o.size or Theme.text.label
+	button.TextColor3 = colors.text
+	button.Text = o.text or ""
+	button.TextWrapped = true
+	button.Size = UDim2.new(o.width or UDim.new(1, 0), UDim.new(0, o.height or Theme.touchHeight))
+	button.LayoutOrder = o.order or 0
+	button:SetAttribute("Style", style)
+
+	Components.corner(button)
+	Components.bevel(button)
+	Components.stroke(button, Theme.shade(colors.bg, -0.5), 2)
+	if colors.outline then
+		Components.stroke(button, C.outline, Theme.strokeText, true)
+	end
+	attachPress(button)
+
+	button.Parent = parent
+	return button
+end
+
+-- 버튼을 누를 수 있게/없게 (못 누르면 회색, 관례)
+function Components.setEnabled(button: TextButton, enabled: boolean)
+	local style = button:GetAttribute("Style")
+	local colors = STYLE_COLORS[if type(style) == "string" then style else "secondary"]
+		or STYLE_COLORS.secondary
+
+	button.Active = enabled
+	button.AutoButtonColor = false
+	button.BackgroundColor3 = if enabled then colors.bg else C.disabled
+	button.TextColor3 = if enabled then colors.text else C.muted
+end
+
+-- 버튼 스타일 바꾸기 (토글 켜짐/꺼짐 등)
+function Components.setStyle(button: TextButton, style: ButtonStyle)
+	button:SetAttribute("Style", style)
+	Components.setEnabled(button, button.Active)
+end
+
+-- 오른쪽 위 빨간 네모 X (모든 창의 닫기, 관례)
+function Components.closeButton(parent: Instance, onClose: () -> ()): TextButton
+	local button = Components.button(
+		parent,
+		{ text = "X", style = "danger", size = Theme.text.title, height = 44 }
+	)
+	button.Size = UDim2.fromOffset(44, 44)
+	button.AnchorPoint = Vector2.new(1, 0)
+	button.Position = UDim2.new(1, -Theme.space.sm, 0, Theme.space.sm)
+	button.ZIndex = 5
+	button.Activated:Connect(onClose)
+	return button
+end
+
+--------------------------------------------------------------------------------
+-- 도형 아이콘 (이미지 없이)
+--------------------------------------------------------------------------------
+
+local function block(
+	parent: Instance,
+	color: Color3,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	rotation: number?
+): Frame
+	local f = Instance.new("Frame")
+	f.BorderSizePixel = 0
+	f.BackgroundColor3 = color
+	f.AnchorPoint = Vector2.new(0.5, 0.5)
+	f.Position = UDim2.fromScale(x, y)
+	f.Size = UDim2.fromScale(w, h)
+	f.Rotation = rotation or 0
+	f.Parent = parent
+	return f
+end
+
+export type Glyph =
+	"coin"
+	| "shard"
+	| "ticket"
+	| "anvil"
+	| "sword"
+	| "book"
+	| "bag"
+	| "flag"
+	| "table"
+
+--[[
+	도형으로 그린 작은 아이콘. 정사각형 틀 안에 그린다.
+	coin=골드(동그라미), shard=파편(마름모), ticket=방지권(방패 모양), anvil=대장간, sword=검,
+	book=도감, bag=상점, flag=경주, table=확률표
+]]
+function Components.glyph(parent: Instance, kind: Glyph, color: Color3?): Frame
+	local holder = Instance.new("Frame")
+	holder.Name = "Glyph"
+	holder.BackgroundTransparency = 1
+	holder.Size = UDim2.fromScale(1, 1)
+	local ratio = Instance.new("UIAspectRatioConstraint")
+	ratio.AspectRatio = 1
+	ratio.Parent = holder
+	holder.Parent = parent
+
+	local main = color or C.text
+	local dark = Theme.shade(main, -0.45)
+
+	if kind == "coin" then
+		local outer = block(holder, main, 0.5, 0.5, 0.8, 0.8)
+		Components.round(outer)
+		Components.stroke(outer, dark, 2)
+		local inner = block(holder, Theme.shade(main, 0.25), 0.5, 0.5, 0.42, 0.42)
+		Components.round(inner)
+	elseif kind == "shard" then
+		local gem = block(holder, main, 0.5, 0.5, 0.56, 0.56, 45)
+		Components.stroke(gem, dark, 2)
+		block(holder, Theme.shade(main, 0.35), 0.42, 0.42, 0.14, 0.14, 45)
+	elseif kind == "ticket" then
+		local top = block(holder, main, 0.5, 0.4, 0.66, 0.5)
+		Components.corner(top, 4)
+		local tip = block(holder, main, 0.5, 0.64, 0.46, 0.46, 45)
+		tip.ZIndex = top.ZIndex
+		block(holder, Theme.shade(main, 0.35), 0.5, 0.42, 0.1, 0.36)
+	elseif kind == "anvil" then
+		block(holder, main, 0.5, 0.36, 0.86, 0.18)
+		block(holder, main, 0.5, 0.56, 0.3, 0.26)
+		block(holder, main, 0.5, 0.78, 0.66, 0.16)
+		block(holder, main, 0.12, 0.4, 0.14, 0.1)
+	elseif kind == "sword" then
+		block(holder, main, 0.5, 0.36, 0.13, 0.62)
+		block(holder, Theme.shade(main, 0.3), 0.5, 0.36, 0.04, 0.56)
+		block(holder, main, 0.5, 0.7, 0.5, 0.09)
+		block(holder, dark, 0.5, 0.84, 0.1, 0.2)
+	elseif kind == "book" then
+		local left = block(holder, main, 0.3, 0.52, 0.36, 0.66)
+		Components.corner(left, 3)
+		local right = block(holder, Theme.shade(main, -0.15), 0.7, 0.52, 0.36, 0.66)
+		Components.corner(right, 3)
+		block(holder, dark, 0.5, 0.52, 0.05, 0.68)
+	elseif kind == "bag" then
+		local body = block(holder, main, 0.5, 0.6, 0.72, 0.6)
+		Components.corner(body, 6)
+		local handle = block(holder, Color3.new(0, 0, 0), 0.5, 0.26, 0.36, 0.24)
+		handle.BackgroundTransparency = 1
+		Components.corner(handle, 8)
+		Components.stroke(handle, main, 3)
+		block(holder, Theme.shade(main, 0.3), 0.5, 0.6, 0.18, 0.18, 45)
+	elseif kind == "flag" then
+		block(holder, dark, 0.28, 0.52, 0.07, 0.8)
+		block(holder, main, 0.56, 0.3, 0.5, 0.32)
+	elseif kind == "table" then
+		local sheet = block(holder, main, 0.5, 0.5, 0.74, 0.74)
+		Components.corner(sheet, 4)
+		for row = 1, 3 do
+			block(holder, dark, 0.5, 0.22 + row * 0.16, 0.56, 0.05)
+		end
+	end
+
+	return holder
+end
+
+-- 나중에 이미지 아이콘을 넣을 자리. assetId 가 비어 있으면 숨겨지고 도형 아이콘이 보인다.
+function Components.iconImage(parent: Instance, assetId: string?): ImageLabel
+	local image = Instance.new("ImageLabel")
+	image.Name = "IconImage"
+	image.BackgroundTransparency = 1
+	image.Size = UDim2.fromScale(1, 1)
+	image.Image = assetId or ""
+	image.Visible = assetId ~= nil and assetId ~= ""
+	image.ZIndex = 3
+	image.Parent = parent
+	return image
+end
+
+--------------------------------------------------------------------------------
+-- 재화 칩 · 진행 막대 · 확률 막대 · 탭
+--------------------------------------------------------------------------------
+
+export type Chip = { frame: Frame, value: TextLabel }
+
+-- 재화 칩: 도형 아이콘 + 숫자 (색·모양 고정)
+function Components.chip(parent: Instance, glyph: Glyph, color: Color3): Chip
+	local frame = Components.frame(parent, {
+		BackgroundTransparency = 0.15,
+		BackgroundColor3 = C.bg,
+	})
+	Components.corner(frame, 18)
+	Components.stroke(frame, Theme.shade(color, -0.35), 2)
+
+	local icon = Components.frame(frame, {
+		Size = UDim2.new(0, 28, 0, 28),
+		Position = UDim2.new(0, 4, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+	})
+	Components.glyph(icon, glyph, color)
+
+	local value = Components.label(frame, {
+		font = Theme.font.display,
+		size = Theme.text.label,
+		color = Theme.color.white,
+		outline = true,
+	})
+	value.Position = UDim2.fromOffset(38, 0)
+	value.Size = UDim2.new(1, -44, 1, 0)
+
+	return { frame = frame, value = value }
+end
+
+export type ProgressBar = { frame: Frame, fill: Frame, set: (ratio: number) -> () }
+
+function Components.progressBar(parent: Instance, color: Color3, height: number?): ProgressBar
+	local frame = Components.frame(parent, {
+		BackgroundColor3 = C.bg,
+		BackgroundTransparency = 0.1,
+		Size = UDim2.new(1, 0, 0, height or 14),
+	})
+	Components.round(frame)
+	Components.stroke(frame, C.line, 1.5)
+
+	local fill = Components.frame(frame, {
+		BackgroundColor3 = color,
+		BackgroundTransparency = 0,
+		Size = UDim2.fromScale(0, 1),
+	})
+	Components.round(fill)
+	Components.bevel(fill, 0.3)
+
+	local function set(ratio: number)
+		fill.Size = UDim2.fromScale(math.clamp(ratio, 0, 1), 1)
+	end
+
+	return { frame = frame, fill = fill, set = set }
+end
+
+export type OddsBar = {
+	frame: Frame,
+	set: (success: number, keep: number, fail: number) -> (),
+}
+
+--[[
+	강화 확률 막대: 성공(주황) · 유지(회색) · 실패(빨강) 세 칸이 비율대로 한 줄.
+	방지권을 켜면 실패 칸이 줄어 사라지고 유지 칸이 늘어나는 게 움직임으로 보인다.
+]]
+function Components.oddsBar(parent: Instance, height: number?): OddsBar
+	local frame = Components.frame(parent, {
+		BackgroundColor3 = C.bg,
+		BackgroundTransparency = 0,
+		Size = UDim2.new(1, 0, 0, height or 22),
+		ClipsDescendants = true,
+	})
+	Components.round(frame)
+	Components.stroke(frame, C.line, 1.5)
+
+	local inner = Components.frame(frame)
+	local listLayout = Components.list(inner, "horizontal", 0)
+	listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+
+	local function segment(color: Color3, order: number): Frame
+		local seg = Components.frame(inner, {
+			BackgroundColor3 = color,
+			BackgroundTransparency = 0,
+			Size = UDim2.fromScale(0, 1),
+			LayoutOrder = order,
+		})
+		Components.bevel(seg, 0.3)
+		return seg
+	end
+
+	local success = segment(C.success, 1)
+	local keep = segment(C.keep, 2)
+	local fail = segment(C.fail, 3)
+
+	local function set(s: number, k: number, f: number)
+		local total = math.max(1e-6, s + k + f)
+		TweenService:Create(success, Theme.motion.fade, { Size = UDim2.fromScale(s / total, 1) })
+			:Play()
+		TweenService:Create(keep, Theme.motion.fade, { Size = UDim2.fromScale(k / total, 1) })
+			:Play()
+		TweenService:Create(fail, Theme.motion.fade, { Size = UDim2.fromScale(f / total, 1) })
+			:Play()
+	end
+
+	return { frame = frame, set = set }
+end
+
+export type Tabs = {
+	frame: Frame,
+	buttons: { [string]: TextButton },
+	select: (key: string) -> (),
+}
+
+function Components.tabs(parent: Instance, keys: { string }, onSelect: (key: string) -> ()): Tabs
+	local frame = Components.frame(parent, { Size = UDim2.new(1, 0, 0, Theme.rowHeight) })
+	Components.list(frame, "horizontal", Theme.space.sm)
+
+	local buttons: { [string]: TextButton } = {}
+	local function select(key: string)
+		for name, button in buttons do
+			Components.setStyle(button, if name == key then "primary" else "ghost")
+		end
+	end
+
+	for index, key in keys do
+		local button = Components.button(frame, {
+			style = "ghost",
+			order = index,
+			height = Theme.rowHeight,
+			width = UDim.new(1 / #keys, -Theme.space.sm),
+		})
+		button.Activated:Connect(function()
+			select(key)
+			onSelect(key)
+		end)
+		buttons[key] = button
+	end
+
+	return { frame = frame, buttons = buttons, select = select }
+end
+
+-- 스크롤 목록
+function Components.scroller(parent: Instance, gap: number?): ScrollingFrame
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.BackgroundTransparency = 1
+	scroll.BorderSizePixel = 0
+	scroll.Size = UDim2.fromScale(1, 1)
+	scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scroll.ScrollingDirection = Enum.ScrollingDirection.Y
+	scroll.ScrollBarThickness = 6
+	scroll.ScrollBarImageColor3 = C.line
+	scroll.Parent = parent
+	Components.list(scroll, "vertical", gap or Theme.space.sm)
+	return scroll
+end
+
+-- 목록 안의 자식(레이아웃 제외)을 지운다
+function Components.clear(parent: Instance)
+	for _, child in parent:GetChildren() do
+		if child:IsA("GuiObject") then
+			child:Destroy()
+		end
+	end
+end
+
+--[[
+	떠오르며 사라지는 글자 ("+100" 등). parent 안 (x, y) 에서 시작한다.
+]]
+function Components.floatText(
+	parent: Instance,
+	text: string,
+	color: Color3,
+	position: UDim2,
+	size: number?
+)
+	local label = Components.label(parent, {
+		text = text,
+		font = Theme.font.display,
+		size = size or Theme.text.title,
+		color = color,
+		outline = true,
+		align = Enum.TextXAlignment.Center,
+	})
+	label.AnchorPoint = Vector2.new(0.5, 0.5)
+	label.Position = position
+	label.Size = UDim2.fromOffset(200, 40)
+	label.ZIndex = 20
+
+	local tween = TweenService:Create(
+		label,
+		TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{ Position = position - UDim2.fromOffset(0, 46), TextTransparency = 1 }
+	)
+	local stroke = label:FindFirstChildOfClass("UIStroke")
+	if stroke then
+		TweenService:Create(stroke, TweenInfo.new(1.2), { Transparency = 1 }):Play()
+	end
+	tween.Completed:Connect(function()
+		label:Destroy()
+	end)
+	tween:Play()
+end
+
+return Components
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="67">
+            <Properties>
+              <string name="Name">ScreenManager</string>
+              <string name="Source"><![CDATA[--!strict
+--[[
+	ScreenManager — 화면 상태와 배치를 한 곳에서 정한다 (통합 기획서 8-1절).
+
+	화면 상태 (mode)
+	  lobby   로비를 돌아다닌다. 가장자리 HUD 만. 이동 컨트롤 보임
+	  forge   대장간 화면이 열려 있다. 이동 컨트롤 숨김
+	  race    경주 중(출발선 ~ 탈락 전). 경주 HUD 만. 이동 컨트롤 보임
+	  raceOut 탈락 후 관전·결과. 이동 컨트롤 숨김
+	큰 창(확률표·검·기록·상점)은 상태와 따로 "modal" 로 하나만 열린다. 열려 있으면 이동 컨트롤을 숨긴다.
+
+	배치: 모든 ScreenGui 는 ScreenInsets = CoreUISafeInsets 를 쓴다(로블록스 위쪽 버튼·노치를 피함).
+	그 영역 크기로 Pure/UILayout 을 계산하고, 등록된 ScreenGui 마다 UIScale = 배율을 건다.
+	컨트롤러는 onLayout 으로 구역 사각형을 받아 자기 화면을 그 자리에 놓는다.
+]]
+
+local GuiService = game:GetService("GuiService")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local VisualConfig = require(Shared:WaitForChild("Config"):WaitForChild("VisualConfig"))
+local UILayout = require(Shared:WaitForChild("Pure"):WaitForChild("UILayout"))
+
+local ScreenManager = {}
+
+export type Mode = "lobby" | "forge" | "race" | "raceOut"
+
+type ModalSpec = {
+	onOpen: () -> (),
+	onClose: () -> (),
+}
+
+local mode: Mode = "forge" -- 처음 접속하면 대장간이 열린 채 시작한다 (첫 강화 안내)
+local modal: string? = nil
+local modals: { [string]: ModalSpec } = {}
+local layout: UILayout.Layout? = nil
+
+local scales: { UIScale } = {}
+local layoutListeners: { (UILayout.Layout) -> () } = {}
+local stateListeners: { () -> () } = {}
+
+local probe: ScreenGui? = nil
+local dimGui: ScreenGui? = nil
+
+local function playerGui(): PlayerGui
+	return Players.LocalPlayer:WaitForChild("PlayerGui") :: PlayerGui
+end
+
+local function safeCall(callback: (...any) -> (), ...: any)
+	local ok, err = pcall(callback, ...)
+	if not ok then
+		warn(`[ScreenManager] 리스너 오류: {err}`)
+	end
+end
+
+local function applyTouchControls()
+	local hideControls = modal ~= nil or mode == "forge" or mode == "raceOut"
+	local ok, err = pcall(function()
+		GuiService.TouchControlsEnabled = not hideControls
+	end)
+	if not ok then
+		warn(`[ScreenManager] 이동 컨트롤 표시를 바꾸지 못했습니다: {err}`)
+	end
+end
+
+local function notifyState()
+	applyTouchControls()
+
+	local dim = dimGui
+	if dim then
+		dim.Enabled = modal ~= nil
+	end
+
+	for _, listener in stateListeners do
+		safeCall(listener)
+	end
+end
+
+local function recompute()
+	local gui = probe
+	if gui == nil then
+		return
+	end
+
+	local size = gui.AbsoluteSize
+	if size.X <= 0 or size.Y <= 0 then
+		return
+	end
+
+	local computed =
+		UILayout.compute(size.X, size.Y, UserInputService.TouchEnabled, VisualConfig.Layout)
+	layout = computed
+
+	for _, scale in scales do
+		scale.Scale = computed.scale
+	end
+	for _, listener in layoutListeners do
+		safeCall(listener, computed)
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 등록
+--------------------------------------------------------------------------------
+
+--[[
+	화면용 ScreenGui 를 만든다. 로블록스 위쪽 버튼과 노치를 피하고(CoreUISafeInsets),
+	배율이 자동으로 걸린다.
+]]
+function ScreenManager.createScreen(name: string, displayOrder: number): ScreenGui
+	local gui = Instance.new("ScreenGui")
+	gui.Name = name
+	gui.ResetOnSpawn = false
+	gui.IgnoreGuiInset = false
+	gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	gui.DisplayOrder = displayOrder
+
+	local scale = Instance.new("UIScale")
+	scale.Scale = if layout then layout.scale else 1
+	scale.Parent = gui
+	table.insert(scales, scale)
+
+	gui.Parent = playerGui()
+	return gui
+end
+
+-- 화면 전체를 덮는 장식용(눌리지 않는) ScreenGui. 번쩍임·어둡게 덮기 등에 쓴다.
+function ScreenManager.createOverlay(name: string, displayOrder: number): ScreenGui
+	local gui = Instance.new("ScreenGui")
+	gui.Name = name
+	gui.ResetOnSpawn = false
+	gui.ScreenInsets = Enum.ScreenInsets.None
+	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	gui.DisplayOrder = displayOrder
+	gui.Parent = playerGui()
+	return gui
+end
+
+function ScreenManager.onLayout(listener: (UILayout.Layout) -> ())
+	table.insert(layoutListeners, listener)
+	if layout then
+		safeCall(listener, layout)
+	end
+end
+
+function ScreenManager.onStateChanged(listener: () -> ())
+	table.insert(stateListeners, listener)
+end
+
+function ScreenManager.getLayout(): UILayout.Layout?
+	return layout
+end
+
+-- 사각형 하나를 GuiObject 의 위치·크기로 (디자인 칸 단위, UIScale 이 배율을 곱한다)
+function ScreenManager.place(object: GuiObject, rect: UILayout.Rect)
+	object.AnchorPoint = Vector2.zero
+	object.Position = UDim2.fromOffset(rect.x, rect.y)
+	object.Size = UDim2.fromOffset(rect.w, rect.h)
+end
+
+--------------------------------------------------------------------------------
+-- 상태
+--------------------------------------------------------------------------------
+
+function ScreenManager.getMode(): Mode
+	return mode
+end
+
+function ScreenManager.setMode(newMode: Mode)
+	if mode == newMode then
+		return
+	end
+	mode = newMode
+	-- 경주로 들어가면 열려 있던 창은 닫는다.
+	if (newMode == "race" or newMode == "raceOut") and modal ~= nil then
+		ScreenManager.closeModal()
+		return
+	end
+	notifyState()
+end
+
+function ScreenManager.isRacing(): boolean
+	return mode == "race" or mode == "raceOut"
+end
+
+-- 대장간을 열고 닫는다 (경주 중에는 무시)
+function ScreenManager.setForgeOpen(open: boolean)
+	if ScreenManager.isRacing() then
+		return
+	end
+	ScreenManager.setMode(if open then "forge" else "lobby")
+end
+
+function ScreenManager.isForgeOpen(): boolean
+	return mode == "forge"
+end
+
+--[[
+	큰 창 등록. 이름 하나에 여는 함수·닫는 함수.
+	열 때는 다른 창을 먼저 닫는다(한 번에 하나만).
+]]
+function ScreenManager.registerModal(name: string, onOpen: () -> (), onClose: () -> ())
+	modals[name] = { onOpen = onOpen, onClose = onClose }
+end
+
+function ScreenManager.getModal(): string?
+	return modal
+end
+
+function ScreenManager.openModal(name: string)
+	if ScreenManager.isRacing() then
+		return
+	end
+
+	local spec = modals[name]
+	if spec == nil then
+		warn(`[ScreenManager] 등록되지 않은 창: {name}`)
+		return
+	end
+
+	if modal == name then
+		return
+	end
+	if modal ~= nil then
+		local previous = modals[modal]
+		if previous then
+			safeCall(previous.onClose)
+		end
+	end
+
+	modal = name
+	safeCall(spec.onOpen)
+	notifyState()
+end
+
+function ScreenManager.closeModal()
+	local current = modal
+	if current == nil then
+		return
+	end
+
+	modal = nil
+	local spec = modals[current]
+	if spec then
+		safeCall(spec.onClose)
+	end
+	notifyState()
+end
+
+function ScreenManager.toggleModal(name: string)
+	if modal == name then
+		ScreenManager.closeModal()
+	else
+		ScreenManager.openModal(name)
+	end
+end
+
+--------------------------------------------------------------------------------
+
+-- 부트스트랩이 컨트롤러보다 먼저 한 번 부른다.
+function ScreenManager.init()
+	if probe ~= nil then
+		return
+	end
+
+	-- 안전 영역 크기를 재는 보이지 않는 화면
+	local measure = Instance.new("ScreenGui")
+	measure.Name = "ForgeLayoutProbe"
+	measure.ResetOnSpawn = false
+	measure.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets
+	measure.Parent = playerGui()
+	probe = measure
+
+	-- 큰 창 뒤를 어둡게. 누르면 창이 닫힌다.
+	local dim = ScreenManager.createOverlay("ForgeDim", 9)
+	dim.Enabled = false
+	local dimButton = Instance.new("TextButton")
+	dimButton.Name = "Dim"
+	dimButton.Text = ""
+	dimButton.AutoButtonColor = false
+	dimButton.BackgroundColor3 = Color3.new(0, 0, 0)
+	dimButton.BackgroundTransparency = 0.45
+	dimButton.BorderSizePixel = 0
+	dimButton.Size = UDim2.fromScale(1, 1)
+	dimButton.Parent = dim
+	dimButton.Activated:Connect(function()
+		ScreenManager.closeModal()
+	end)
+	dimGui = dim
+
+	measure:GetPropertyChangedSignal("AbsoluteSize"):Connect(recompute)
+	recompute()
+	applyTouchControls()
+end
+
+return ScreenManager
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="68">
+            <Properties>
+              <string name="Name">Theme</string>
+              <string name="Source"><![CDATA[--!strict
+--[[
+	Theme — 화면에서 쓰는 색·글꼴·크기·움직임 (통합 기획서 8-1절).
+
+	숫자 색표는 shared/Config/Palette 에 있고, 여기서는 Color3 로 바꿔 둔다.
+	컨트롤러는 색 숫자를 직접 쓰지 않고 Theme 만 쓴다.
+]]
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local ConfigFolder = Shared:WaitForChild("Config")
+local Palette = require(ConfigFolder:WaitForChild("Palette"))
+local VisualConfig = require(ConfigFolder:WaitForChild("VisualConfig"))
+local VisualLogic = require(Shared:WaitForChild("Pure"):WaitForChild("VisualLogic"))
+
+local Theme = {}
+
+local function rgb(values: { number }): Color3
+	return Color3.fromRGB(values[1], values[2], values[3])
+end
+
+Theme.rgb = rgb
+
+local ui = Palette.UI
+
+Theme.color = {
+	bg = rgb(ui.bg),
+	panel = rgb(ui.panel),
+	sub = rgb(ui.sub),
+	line = rgb(ui.line),
+	text = rgb(ui.text),
+	muted = rgb(ui.muted),
+	ember = rgb(ui.ember),
+	emberDark = rgb(ui.emberDark),
+	ink = rgb(ui.ink),
+	outline = rgb(ui.outline),
+	disabled = rgb(ui.disabled),
+	danger = rgb(ui.danger),
+	gold = rgb(ui.gold),
+	shard = rgb(ui.shard),
+	ticket = rgb(ui.ticket),
+	success = rgb(ui.success),
+	keep = rgb(ui.keep),
+	fail = rgb(ui.fail),
+	protect = rgb(ui.protect),
+	event = rgb(ui.event),
+	white = Color3.new(1, 1, 1),
+	black = Color3.new(0, 0, 0),
+}
+
+--[[
+	글꼴. 제목·숫자는 둥글고 두꺼운 카툰체, 설명은 기본체 (결정 7).
+	한글이 카툰 글꼴에 없으면 로블록스가 다른 글꼴로 대신 보여 준다 → Studio 에서 확인할 것.
+]]
+Theme.font = {
+	display = Enum.Font.FredokaOne,
+	body = Enum.Font.BuilderSans,
+	bodyBold = Enum.Font.BuilderSansBold,
+}
+
+Theme.text = VisualConfig.Text
+
+Theme.space = {
+	xs = 4,
+	sm = 8,
+	md = 12,
+	lg = 16,
+	xl = 24,
+}
+
+Theme.radius = 10
+Theme.radiusLarge = 14
+-- 버튼 높이 (디자인 칸). 60 × 최소 배율 0.74 ≈ 44px. 목록 안의 줄 버튼은 52 (폰 대부분에서 44px 안팎).
+Theme.touchHeight = 60
+Theme.rowHeight = 52
+Theme.strokeText = 2 -- 굵은 글자 테두리 두께
+
+Theme.motion = {
+	press = TweenInfo.new(0.06, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+	release = TweenInfo.new(0.14, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+	fade = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+	pop = TweenInfo.new(0.35, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+	slow = TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut),
+}
+
+-- 검 등급 색
+function Theme.rarityColor(rarity: string): Color3
+	local values = Palette.RARITY[rarity]
+	return if values then rgb(values) else Theme.color.muted
+end
+
+-- 레벨 색 단계 (쇠를 달구는 색, 결정 4)
+function Theme.heatTier(level: number): Palette.HeatTier
+	return VisualLogic.heatTier(level, Palette.HEAT_TIERS)
+end
+
+function Theme.heatColor(level: number): Color3
+	return rgb(Theme.heatTier(level).rgb)
+end
+
+-- 같은 색을 조금 밝게(amount > 0) 또는 어둡게(amount < 0)
+function Theme.shade(color: Color3, amount: number): Color3
+	if amount >= 0 then
+		return color:Lerp(Color3.new(1, 1, 1), amount)
+	end
+	return color:Lerp(Color3.new(0, 0, 0), -amount)
+end
+
+return Theme
+]]></string>
+            </Properties>
+          </Item>
+        </Item>
       </Item>
     </Item>
   </Item>
-  <Item class="TextChatService" referent="59">
+  <Item class="TextChatService" referent="69">
     <Properties>
       <string name="Name">TextChatService</string>
       <token name="ChatVersion">1</token>
     </Properties>
   </Item>
-  <Item class="Workspace" referent="60">
+  <Item class="Workspace" referent="70">
     <Properties>
       <string name="Name">Workspace</string>
       <bool name="FilteringEnabled">true</bool>
