@@ -109,8 +109,9 @@ Claude Code 가 이 저장소에서 일할 때 가장 먼저 읽는 파일이다
 
 ## 4. 현재 상태 (2026-11-14 기준)
 
-**개발 5단계까지 코드 작성·커밋 완료** (1~3단계 579291e, 4~5단계는 그 다음 커밋). Luau 60개 파일, 테스트 154개 통과.
-Studio 실동작은 한 번도 확인하지 못했다. 개발자가 Studio 에서 돌려 보고 Output 오류를 알려 주기로 했다.
+**개발 5단계 + 화면·월드 개편(P44·P45)까지 코드 작성·커밋 완료.** Luau 76개 파일, 테스트 230개 통과.
+화면·월드 개편은 `claude/ui-lobby-design` 브랜치(1~5단계 위에 쌓음). Studio 실동작은 한 번도 확인하지 못했다.
+개발자가 Studio 에서 돌려 보고 Output 오류와 스크린샷(절차는 `docs/시작하기.md` 2절 "찍어 줄 장면")을 보내 주기로 했다.
 
 ### 개발 계획 (개발자 지시)
 
@@ -121,8 +122,10 @@ Studio 실동작은 한 번도 확인하지 못했다. 개발자가 Studio 에�
 | 3 | 검 보관함·착용·소지 상한 구매·뽑기·도감, 스키마 v4 | 코드 완료 · Studio 확인 대기 |
 | 4 | 추격 생존 경주 + 로비 트레드밀 1단계 (거리는 서버 계산, D16·D6 은 자리만) | 코드 완료 · Studio 확인 대기 |
 | 5 | 방지권 상품 3종 + 천장 포인트 + 파편 뽑기 (수치·ID 는 비워 두고, 비면 숨김) | 코드 완료 · Studio 확인 대기 |
+| UI | 화면 개편 (P44, 통합 기획서 8-1절) | 코드 완료 · Studio 확인·스크린샷 대기 |
+| 월드 | 불씨 광장·쇳물 수로·블록 3D 검 (P45, 통합 기획서 8-2절) | 코드 완료 · Studio 확인·스크린샷 대기 |
 
-다음 할 일: 개발자가 Studio 에서 확인(절차는 `docs/시작하기.md` 2~3절) → Output 오류와 화면 문제를 받아 고친다.
+다음 할 일: 개발자가 Studio 에서 확인(절차는 `docs/시작하기.md` 2~3절) → Output 오류와 스크린샷을 받아 고친다.
 그 뒤는 미정 항목(D22 검 20종, D16 능력·업그레이드, D6 순위 보너스, D12 상품 수치, D18 트레드밀 단계, D7 랭킹)이
 정해지는 대로 채운다.
 
@@ -140,7 +143,7 @@ Studio 실동작은 한 번도 확인하지 못했다. 개발자가 Studio 에�
 
 | 서비스 | 하는 일 |
 | --- | --- |
-| WorldService | 로비를 블록으로 짓는다(바닥·벽·스폰·트레드밀 발판), 캐릭터끼리 충돌 끄기, 로비로 옮기기. 맨 먼저 Init |
+| WorldService | 불씨 광장을 블록으로 짓는다(대장간·모루 영감·관문·러닝머신·명예의 벽·진열대·횃불·산), 해 질 녘 빛, 캐릭터끼리 충돌 끄기, 로비·관문 앞으로 옮기기, 모루 근접 버튼. 맨 먼저 Init |
 | DataService | ProfileStore 세션, 템플릿, 마이그레이션 호출(`Pure/DataMigration`, v1→v4), 차단 확인, 복제, 설정 변경 |
 | AnalyticsService | 재화 source/sink·강화·퍼널 로그, 골드 급증 탐지(경주 보상은 제외) (Roblox Analytics 연결은 미완) |
 | LiveOpsService | DataStore 원격 설정 60초 폴링: 점검·공지·확률 버프 이벤트 |
@@ -148,38 +151,56 @@ Studio 실동작은 한 번도 확인하지 못했다. 개발자가 Studio 에�
 | CodexService | 검별 최고 레벨과 5·10·15·20강 달성 기록 (`codex["검id:구간"]`). 보상 효과는 D16 미정이라 기록만 |
 | EnhanceService | 착용 검 강화(2구간, 실패 시 10강), 이름 짓기(필터링), 레이트 리밋+락, 15강 공지, GetState |
 | SwordService | 착용 검 바꾸기, 소지 상한 구매 + 새 검 뽑기 |
-| TreadmillService | 1초마다 "발판 위에 있는지"를 서버 위치로 확인, 20초당 100골드. 내려오면 진행 시간은 멈춘 채 유지 |
-| RaceService | 대기열(20명 또는 7초) → 출발선 3초 → 추격자 → 탈락 순간 보상 → 관전/로비. 매 프레임 거리 검증. 판마다 코스 새로 지음 |
+| SwordDisplayService | 1초마다: 모든 플레이어 오른손에 블록 검(착용 검·레벨), 서버 최고 검을 진열대에 |
+| TreadmillService | 1초마다 "발판 위에 있는지"를 서버 위치로 확인, 20초당 100골드. 내려오면 진행 시간은 멈춘 채 유지. 발판 속성 Occupied·PaidAt, 로비 속성 TreadmillUsers |
+| RaceService | 대기열(20명 또는 7초, 버튼 또는 관문 바닥 원) → 출발선 3초 → 추격자 → 탈락 순간 보상 → 관전/로비(관문 앞). 매 프레임 거리 검증. 판마다 코스 새로 지음. 관문 속성 QueueCount·DepartAt·LaunchAt |
 | ChatCommandService | `/강화 [보호]` `/확률` `/정보` `/도움말` |
 | ShopService | 방지권 상품 3종(확정 1개·묶음·확률형+천장 포인트), 파편 뽑기, PolicyService 제한 확인, ProcessReceipt(저장 확인 후 지급 완료) |
 | LeaderboardService | 최고 강화 레벨 순위 (OrderedDataStore, 예산 확인) |
 | AdminService | `/관리` 명령, 감사 로그. `ADMIN_USER_IDS` 가 비면 비활성 |
-| RateLimiter, CourseBuilder | 유틸 (생명주기 없음). CourseBuilder 는 장애물 목록을 받아 코스 파트를 만든다 |
+| RateLimiter, CourseBuilder | 유틸 (생명주기 없음). CourseBuilder 는 장애물 목록을 받아 "쇳물 수로" 파트를 만든다 |
 
 `src/server/vendor/ProfileStore.luau` — 외부 원본(커밋 45c9847, Apache 2.0). 고치지 않는다(`.styluaignore` 로 포맷에서도 제외).
 
 ### 클라이언트 (`src/client/controllers/`)
 
-Sound → Effects → Feed → OddsTable → Shop → Sword → Collection → Lobby → Race → UI 순서로 초기화.
-`ClientState` 가 서버가 보낸 데이터의 로컬 사본(표시 전용)과 "방지권 사용" 스위치, "경주 화면 중", "대장간 접힘" 상태를 들고 있다.
-`LobbyController` 는 경주 매칭·대장간 접기 버튼과 트레드밀 표시, `RaceController` 는 출발선부터 로비 복귀까지의 화면(카운트다운,
-거리, 추격자 간격, 결과, 관전)을 맡는다. 경주 화면 중에는 대장간 화면(ForgeMain)과 피드를 숨긴다.
+부트스트랩이 `ui/ScreenManager.init()` 를 먼저 부르고, Sound → Effects → Hud → Feed → OddsTable → Shop → Sword → Collection →
+Lobby → Race → UI → WorldFx 순서로 초기화한다.
+
+`src/client/ui/` (화면 기반, 컨트롤러가 아님):
+- `Theme` — 색(Config/Palette → Color3)·글꼴(제목·숫자 FredokaOne, 설명 BuilderSans)·글자 크기·움직임. **컨트롤러에 색 숫자를 직접 쓰지 않는다.**
+- `Components` — 버튼(primary/secondary/danger/ghost, 눌림 애니메이션, 못 누르면 회색), 오른쪽 위 빨간 X, 도형 아이콘(동그라미·마름모·방패·모루·검·책·가방·깃발·표),
+  메뉴 타일, 재화 칩, 진행 막대, 확률 막대(성공·유지·실패), 탭, 떠오르는 글자, 이미지 아이콘 자리(비면 숨김)
+- `ScreenManager` — 화면 상태(lobby/forge/race/raceOut)와 창 하나(odds/swords/records/shop), 이동 컨트롤 표시(GuiService.TouchControlsEnabled),
+  배치 계산(Pure/UILayout)과 모든 ScreenGui 의 UIScale. 모든 화면 ScreenGui 는 `ScreenInsets = CoreUISafeInsets`(로블록스 위쪽 버튼·노치 피함)
+- `ForgeLayout` — 대장간 창 안쪽 배치(왼쪽 무대·피드 칸·오른쪽 조작부)
+
+컨트롤러: Hud(재화 칩·공지 배너), Feed(대장간 피드 칸 / 로비 한 줄), UI(대장간 창, 강화 요청, 이름 짓기, GetState·데이터 복제 수신),
+Effects(강화 연출: 레벨별 길이, 건너뛰기), OddsTable·Sword·Collection·Shop(창), Lobby(왼쪽 메뉴·경주 버튼·러닝머신 막대),
+Race(경주 HUD·결과·관전), WorldFx(광장·코스 움직임, 세계 글자, 3D 검 미리보기, 근접 버튼, 15·20강 광장 연출).
+`ClientState` 는 서버가 보낸 데이터의 로컬 사본(표시 전용)과 "방지권 사용" 스위치만 든다.
 확률표·뽑기 확률표·도감은 복제받은 데이터와 `Pure/` 함수로 클라이언트가 그린다(서버와 같은 함수라 어긋나지 않는다).
 
 ### 공유 (`src/shared/`)
 
 - `Config/` — EnhanceTable(확률표, 비용 상수), EconomyConfig(트레드밀 단계 포함), Weapons(5종, 뽑기 가중치, 상한 가격 상수),
-  RaceConfig(경주 수치: 확정·추천치·기술 값 표시), World(로비·코스의 위치·크기), Products(방지권 상품·천장·파편 뽑기), Game
-- `Pure/` — EnhanceLogic, SwordLogic, RaceLogic, TreadmillLogic, DrawLogic, DataMigration, Format (Roblox API 없음, 테스트 대상)
-- `Types` (스키마 v4), `Remotes`, `Locale` (ko/en 각 156키)
+  RaceConfig(경주 수치: 확정·추천치·기술 값 표시), World(광장·코스 배치, 관 경로, 세계 속성 이름), Products(방지권 상품·천장·파편 뽑기), Game,
+  Palette(화면·세계 공용 색, 등급 색, 쇠 달구는 레벨 색), VisualConfig(화면 배치·강화 연출 시간·글자 크기), SwordShapes(블록 검 5종 모양 데이터)
+- `Pure/` — EnhanceLogic, SwordLogic, RaceLogic, TreadmillLogic, DrawLogic, DataMigration, Format(+줄여 쓰기), UILayout(기기별 구역 배치),
+  VisualLogic(레벨 색 단계·연출 길이·배율) (Roblox API 없음, 테스트 대상)
+- `SwordModel` — 블록 검 짓기 (서버: 손·진열대, 클라이언트: 미리보기)
+- `Types` (스키마 v4), `Remotes`(WorldEvent 추가), `Locale` (ko/en 각 182키)
 
 ### 공간 배치 (코드로 짓는다, `Config/World`)
 
-로비: 원점 중심 120×120, 바닥 윗면 y=0, 보이지 않는 벽, 스폰(0, -20), 모루 장식, 트레드밀 발판 4개(x=-44).
+불씨 광장: 원점 중심 120×120, 바닥 윗면 y=0, 북쪽(+Z)이 코스 방향. 스폰(0,-30), 대장간(0,8), 관문 바닥 원(0,42)·기둥 줄 z=54,
+러닝머신 4대(x=-51), 명예의 벽(56,0), 진열대(41,-39), 경주 후 돌아오는 자리(12,28). 전부 `Config/World` 에 있다.
+서버는 짓기와 속성만, 움직임·글자는 WorldFxController 가 기기마다 한다(속성 이름은 `World.ATTR`).
 경주 코스: 출발선 z=300 에서 +Z 로 뻗는다. 동시에 열린 판은 x 로 90칸씩 떨어진 자리(slot)를 쓴다.
-`Workspace.Races/Race_<id>` 폴더에 바닥·벽·장애물·`Chaser`(추격자 벽)가 들어가고 판이 끝나면 지운다.
-Workspace 에 `Lobby` 폴더가 이미 있으면 새로 짓지 않고 그 안의 `Treadmills` 폴더(파트의 `TreadmillTier` 속성)를 쓴다.
-`default.project.json` 에서 `StreamingEnabled = false` 로 고정했다(코스가 멀리 있어도 전부 보이게).
+`Workspace.Races/Race_<id>` 폴더에 바닥·벽·장애물·`Chaser`(쇳물 해일)·`StartBar`·`StartBrazier1~3` 이 들어가고 판이 끝나면 지운다.
+Workspace 에 `Lobby` 폴더가 이미 있으면 새로 짓지 않고 그 안의 `Treadmills` 폴더(모델 안 "Pad" 또는 파트, `TreadmillTier` 속성)와 `Gate` 를 쓴다.
+`default.project.json`: `StreamingEnabled = false`(코스가 멀어도 전부 보이게), `StarterGui.ScreenOrientation = LandscapeSensor`(휴대폰 가로 고정),
+`Lighting.Technology = Future`(스크립트로 못 바꾸는 설정이라 프로젝트 파일에).
 
 ### 저장 스키마 v4
 
@@ -210,7 +231,8 @@ v3 의 `weapon` 은 첫 검으로 옮기고 필드는 지우지 않았다. 배�
 - **확률형이 제한된 유저의 확률형 결제**: 상점은 숨기고 구매창도 안 띄우지만, 조작한 클라이언트나 게임 소개 페이지의
   Store 탭으로 결제가 들어올 수 있다. 지금은 뽑지 않고 "처리 안 됨"으로 둔다(공식 문서상 자동 환불되지 않고 접속 때마다
   다시 들어온다). 무엇을 줄지는 기획에 없다 → 개발자 결정 대기. **확률형 상품은 Store 탭에 올리지 말 것.**
-- 사운드 에셋, 검 외형(3D 모델), 로비·코스 미술이 비어 있다(블록으로만 지었다).
+- 사운드 에셋이 비어 있다 (`SoundController` 의 자리 11개, 시안의 "소리 자리" 표). 검·광장·코스는 블록으로만 지었다.
+- 이미지 아이콘이 없다 (도형 아이콘, `Components.iconImage` 자리만).
 
 ### 알아 둘 것
 
@@ -220,6 +242,9 @@ v3 의 `weapon` 은 첫 검으로 옮기고 필드는 지우지 않았다. 배�
 - 접속을 끊으면 그 순간까지의 거리로 보상을 확정해 저장한다(`DataService.onUnloading` 경로).
 - 처리 안 된 개발자 상품 결제는 로블록스가 **환불하지 않는다**(공식 문서 MarketplaceService.ProcessReceipt). 접속 때마다 다시 들어온다.
 - 캐릭터 충돌 그룹은 `workspace:RegisterCollisionGroup` 을 쓴다. `PhysicsService` 쪽 함수는 폐기 표시가 됐다.
+- `ScreenGui.IgnoreGuiInset = true` 로 하면 ScreenInsets 가 DeviceSafeInsets 로 바뀌어 로블록스 위쪽 버튼과 겹친다(공식 문서). 화면은 `ScreenManager.createScreen` 으로만 만든다.
+- 앞에서 쓰는 지역 함수는 먼저 선언해야 한다(뒤에 `local function` 으로 정의하면 앞쪽 호출은 없는 전역을 부른다). selene 의 unused 경고로 한 번 잡았다.
+- stylua 는 한 번에 다 정리되지 않을 때가 있어서 두 번 돌린다.
 - 내려받은 `luau-lsp` 실행 파일은 이 환경의 권한 설정이 실행을 거부했다. 다시 시도하지 말 것.
 
 ---
@@ -255,6 +280,14 @@ v3 의 `weapon` 은 첫 검으로 옮기고 필드는 지우지 않았다. 배�
 | "대장간 접기" 버튼 추가 | 대장간 패널이 화면을 가려 로비를 돌아다니기 어렵다. 접어도 재화 바는 남는다 |
 | 상품 정의에 `kind`(fixed/random)와 `outcomes`(tickets, weight) | 확률을 Config 에 채우기만 하면 상점 표시(%)와 실제 추첨이 같은 데이터에서 나온다 |
 | 정책 확인(PolicyService)에 실패하면 "제한됨"으로 본다 | 확률형을 잘못 보여 주는 것보다 못 보여 주는 쪽이 안전하다. 실패는 캐시하지 않고 다음에 다시 확인 |
+| 화면 배치는 Pure/UILayout 이 계산하고 기기 7종 테스트 | Studio 없이도 겹침·잘림을 잡기 위해. 기준 크기 860×360(디자인 칸), 배율 0.74~1.5 |
+| 휴대폰에서는 왼쪽 메뉴가 재화 칩 아래 가로 한 줄 | 결정 5는 "왼쪽 가운데 세로"지만 휴대폰 가로는 화면이 낮아 이동 조이스틱 자리와 겹친다. 태블릿·PC 는 세로 한 줄 |
+| 처음 접속하면 대장간 창이 열린 채 시작 | 첫 강화 3회 안내 때문. 닫으면 로비 |
+| 강화 결과 숫자는 연출이 "공개"할 때 바뀐다 | 데이터 복제가 먼저 와도 망치질 도중에 결과가 보이지 않게 (UIController.revealLevel) |
+| 세계 글자(표지판·전광판·명예의 벽·명패·근접 버튼)는 기기가 붙인다 | 언어가 플레이어마다 다르기 때문 |
+| 움직이는 장식은 기기가, 서버는 속성만 | 서버 부담과 복제량을 줄인다. 카메라가 광장에서 220칸보다 멀면 광장 연출을 멈춘다 |
+| 모루 근접 버튼은 서버(Triggered → WorldEvent)와 기기(Triggered) 양쪽에서 받는다 | 기기 쪽 Triggered 가 동작하는지 문서로 확실히 확인하지 못해서. 대장간 열기는 두 번 불려도 같다 |
+| 손에 든 검은 0.62배, 칼날이 손 앞쪽 | 기본 검 길이 약 5칸이 캐릭터 키와 비슷해서 줄였다. 보기만 하고 부딪힘·무게 없음 |
 
 ---
 
@@ -266,7 +299,7 @@ v3 의 `weapon` 은 첫 검으로 옮기고 필드는 지우지 않았다. 배�
 # 순수 로직 테스트·시뮬레이션용 Luau 실행기 (Lune 대체, 약 40초 빌드)
 cargo build --release --manifest-path tools/luaurun/Cargo.toml
 R=tools/luaurun/target/release/luaurun
-$R tests/run.luau                         # 테스트 154개
+$R tests/run.luau                         # 테스트 230개
 $R tools/simulate_economy.luau            # 강화 시뮬레이션 (0강→20강 기대 시도 약 9,440회가 나와야 한다)
 $R --check $(git ls-files '*.luau')       # 전 파일 문법 검사
 
@@ -297,10 +330,10 @@ stylua --check src tests tools
 ## 7. 미해결 · 대기 중
 
 - **기획 결정 대기**: `docs/통합-기획서.md` 9절 (상세 근거는 `docs/기획서.md` 5절).
-- **Studio 실동작 확인 대기**: UI 렌더링, DataStore 저장, 채팅 명령어 등록, 로비·코스가 지어지는지,
-  경주 진행(매칭·출발·추격자·탈락·관전·로비 복귀), 트레드밀 수입, 상점 화면.
+- **Studio 실동작 확인 대기**: 새 화면 전부(배치·글꼴·한글 표시·연출), DataStore 저장, 채팅 명령어 등록, 광장·코스가 지어지는지,
+  모루 영감 망치질·러닝머신·관문 연출, 손에 든 검 위치, 3D 미리보기, 경주 진행, 근접 버튼, 상점 화면.
   개발자가 Output 창 오류를 보내 주면 그걸 기준으로 고친다.
-- 화면 배치는 눈으로 본 적이 없다. 특히 세로 모바일에서 로비 버튼·피드·대장간 패널이 겹칠 수 있다.
+- 화면 배치는 테스트로 계산만 했고 눈으로 본 적이 없다. 특히 FredokaOne 에 한글이 없으면 다른 글꼴로 보인다(Studio 확인).
 - `rokit.toml` 버전 문자열 미검증 (cargo 로 확인한 실제 최신: rojo 7.7.0, selene 0.31.0, stylua 2.5.2).
 - Roblox `AnalyticsService` 실제 연결 안 됨 (`AnalyticsService.sendToRoblox` 자리만 있음).
 - 개발자 입력 필요: `ADMIN_USER_IDS`, 방지권 상품 ID 3개(`Config/Products.luau`), 사운드 에셋 ID.
