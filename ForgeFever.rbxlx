@@ -17120,6 +17120,76 @@ local function floatWorldText(at: BasePart, text: string, color: Color3)
 	tween:Play()
 end
 
+-- 땅에서 솟았다 사라지는 빛기둥 (관문 출발, 로비 복귀)
+local function lightPillar(center: Vector3, radius: number)
+	local pillar = Instance.new("Part")
+	pillar.Anchored = true
+	pillar.CanCollide = false
+	pillar.CanQuery = false
+	pillar.CanTouch = false
+	pillar.CastShadow = false
+	pillar.Material = Enum.Material.Neon
+	pillar.Color = rgb(Palette.WORLD.moltenHot)
+	pillar.Shape = Enum.PartType.Cylinder
+	pillar.Size = Vector3.new(0.2, radius * 2, radius * 2)
+	pillar.CFrame = CFrame.new(center) * CFrame.Angles(0, 0, math.rad(90))
+	pillar.Transparency = 0.3
+	pillar.Parent = fxFolder
+
+	local height = 30
+	local up = TweenService:Create(
+		pillar,
+		TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{
+			Size = Vector3.new(height, radius * 2, radius * 2),
+			CFrame = CFrame.new(center + Vector3.new(0, height / 2, 0))
+				* CFrame.Angles(0, 0, math.rad(90)),
+		}
+	)
+	up.Completed:Connect(function()
+		local fade = TweenService:Create(pillar, TweenInfo.new(0.4), { Transparency = 1 })
+		fade.Completed:Connect(function()
+			pillar:Destroy()
+		end)
+		fade:Play()
+	end)
+	up:Play()
+end
+
+-- 한 번 터지는 입자 (불티·연기). parent 파트에 붙였다가 잠시 뒤 지운다.
+local function puff(parent: BasePart, color: Color3, count: number, speed: number, size: number)
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Color = ColorSequence.new(color)
+	emitter.LightEmission = 0.4
+	emitter.Rate = 0
+	emitter.Lifetime = NumberRange.new(0.4, 0.8)
+	emitter.Speed = NumberRange.new(speed * 0.5, speed)
+	emitter.SpreadAngle = Vector2.new(180, 180)
+	emitter.Size = NumberSequence.new(size, 0)
+	emitter.Parent = parent
+	emitter:Emit(count)
+	task.delay(1.5, function()
+		emitter:Destroy()
+	end)
+end
+
+-- 캐릭터에 주황 외곽선 (이 기기에서만 보인다)
+local function outline(character: Model, name: string): Highlight
+	local existing = character:FindFirstChild(name)
+	if existing and existing:IsA("Highlight") then
+		return existing
+	end
+	local highlight = Instance.new("Highlight")
+	highlight.Name = name
+	highlight.Adornee = character
+	highlight.FillTransparency = 1
+	highlight.OutlineColor = rgb(Palette.WORLD.ember)
+	highlight.OutlineTransparency = 0
+	highlight.DepthMode = Enum.HighlightDepthMode.Occluded
+	highlight.Parent = character
+	return highlight
+end
+
 local function lobbyNearby(): boolean
 	local camera = Workspace.CurrentCamera
 	return camera ~= nil and camera.Focus.Position.Magnitude < LOBBY_RANGE
@@ -17390,6 +17460,22 @@ type Treadmill = {
 }
 
 local treadmills: { Treadmill } = {}
+-- 내가 올라선 발판의 진행 (서버가 나에게만 보내는 TreadmillUpdate)
+local myPadProgress = 0
+local myOnPad = false
+
+local function isMyPad(pad: BasePart): boolean
+	if not myOnPad then
+		return false
+	end
+	local character = Players.LocalPlayer.Character
+	local root = if character then character:FindFirstChild("HumanoidRootPart") else nil
+	if root == nil or not root:IsA("BasePart") then
+		return false
+	end
+	local offset = root.Position - pad.Position
+	return math.abs(offset.X) <= pad.Size.X / 2 and math.abs(offset.Z) <= pad.Size.Z / 2
+end
 local beltLength = World.TREADMILL_PAD.sizeZ - 2
 
 local function setupTreadmills(lobbyFolder: Instance)
@@ -17565,7 +17651,12 @@ local function stepTreadmills(now: number, dt: number)
 
 			local lamp = entry.lamp
 			if lamp then
-				lamp.Transparency = 0.15 + 0.15 * math.sin(now * 4)
+				if isMyPad(entry.pad) then
+					-- 내 발판: 20초에 걸쳐 점점 밝아진다
+					lamp.Transparency = 0.65 - 0.6 * math.clamp(myPadProgress, 0, 1)
+				else
+					lamp.Transparency = 0.15 + 0.15 * math.sin(now * 4)
+				end
 			end
 		else
 			local lamp = entry.lamp
@@ -17607,7 +17698,12 @@ end
 type Gate = {
 	model: Model,
 	segments: { BasePart },
+	segmentSizes: { Vector3 },
 	runes: { BasePart },
+	runeBases: { { size: Vector3, cframe: CFrame } },
+	fountain: ParticleEmitter?,
+	nextFountain: number,
+	nextOutlineCheck: number,
 	falls: { BasePart },
 	boardLabel: TextLabel?,
 	ringCenter: Vector3,
@@ -17625,7 +17721,12 @@ local function setupGate(lobbyFolder: Instance)
 	local entry: Gate = {
 		model = model,
 		segments = {},
+		segmentSizes = {},
 		runes = {},
+		runeBases = {},
+		fountain = nil,
+		nextFountain = 0,
+		nextOutlineCheck = 0,
 		falls = {},
 		boardLabel = nil,
 		ringCenter = Vector3.new(World.GATE.ringX, 0.3, World.GATE.ringZ),
@@ -17660,42 +17761,75 @@ local function setupGate(lobbyFolder: Instance)
 	table.sort(entry.segments, function(a, b)
 		return (tonumber(a:GetAttribute("Index")) or 0) < (tonumber(b:GetAttribute("Index")) or 0)
 	end)
+	for index, segment in entry.segments do
+		entry.segmentSizes[index] = segment.Size
+	end
+	for index, rune in entry.runes do
+		entry.runeBases[index] = { size = rune.Size, cframe = rune.CFrame }
+	end
+
+	-- 마지막 3초에 원 가장자리에서 솟는 불티 분수 (보이지 않는 받침에 붙인다)
+	local holder = Instance.new("Part")
+	holder.Anchored = true
+	holder.CanCollide = false
+	holder.CanQuery = false
+	holder.CanTouch = false
+	holder.Transparency = 1
+	holder.Size = Vector3.new(World.GATE.ringRadius * 2, 0.2, World.GATE.ringRadius * 2)
+	holder.Position = entry.ringCenter
+	holder.Parent = fxFolder
+	local fountain = Instance.new("ParticleEmitter")
+	fountain.Color = ColorSequence.new(rgb(Palette.WORLD.moltenHot))
+	fountain.LightEmission = 1
+	fountain.Rate = 0
+	fountain.Lifetime = NumberRange.new(0.6, 1)
+	fountain.Speed = NumberRange.new(10, 16)
+	fountain.SpreadAngle = Vector2.new(15, 15)
+	fountain.Acceleration = Vector3.new(0, -25, 0)
+	fountain.Size = NumberSequence.new(0.3, 0)
+	fountain.EmissionDirection = Enum.NormalId.Top
+	fountain.Parent = holder
+	entry.fountain = fountain
+
 	gate = entry
 end
 
-local function launchPillar(center: Vector3)
-	local pillar = Instance.new("Part")
-	pillar.Anchored = true
-	pillar.CanCollide = false
-	pillar.CanQuery = false
-	pillar.CanTouch = false
-	pillar.CastShadow = false
-	pillar.Material = Enum.Material.Neon
-	pillar.Color = rgb(Palette.WORLD.moltenHot)
-	pillar.Shape = Enum.PartType.Cylinder
-	pillar.Size = Vector3.new(0.2, World.GATE.ringRadius * 2, World.GATE.ringRadius * 2)
-	pillar.CFrame = CFrame.new(center) * CFrame.Angles(0, 0, math.rad(90))
-	pillar.Transparency = 0.3
-	pillar.Parent = fxFolder
+-- 기둥 문양을 아래에서 fill(0~1) 만큼 채운다
+local function fillRunes(entry: Gate, fill: number)
+	for index, rune in entry.runes do
+		local base = entry.runeBases[index]
+		if base then
+			local height = math.max(0.3, base.size.Y * fill)
+			local bottom = base.cframe.Position.Y - base.size.Y / 2
+			rune.Size = Vector3.new(base.size.X, height, base.size.Z)
+			rune.CFrame =
+				CFrame.new(base.cframe.Position.X, bottom + height / 2, base.cframe.Position.Z)
+		end
+	end
+end
 
-	local height = 30
-	local up = TweenService:Create(
-		pillar,
-		TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-		{
-			Size = Vector3.new(height, World.GATE.ringRadius * 2, World.GATE.ringRadius * 2),
-			CFrame = CFrame.new(center + Vector3.new(0, height / 2, 0))
-				* CFrame.Angles(0, 0, math.rad(90)),
-		}
-	)
-	up.Completed:Connect(function()
-		local fade = TweenService:Create(pillar, TweenInfo.new(0.4), { Transparency = 1 })
-		fade.Completed:Connect(function()
-			pillar:Destroy()
-		end)
-		fade:Play()
-	end)
-	up:Play()
+-- 대기 중일 때 원 안에 선 사람에게 주황 외곽선
+local function updateRingOutlines(active: boolean)
+	local spec = World.GATE
+	for _, player in Players:GetPlayers() do
+		local character = player.Character
+		if character == nil then
+			continue
+		end
+		local root = character:FindFirstChild("HumanoidRootPart")
+		local inside = false
+		if active and root and root:IsA("BasePart") then
+			local dx, dz = root.Position.X - spec.ringX, root.Position.Z - spec.ringZ
+			inside = dx * dx + dz * dz <= spec.ringRadius * spec.ringRadius
+				and root.Position.Y <= spec.ringReach
+		end
+		local existing = character:FindFirstChild("ForgeRingOutline")
+		if inside and existing == nil then
+			outline(character, "ForgeRingOutline")
+		elseif not inside and existing then
+			existing:Destroy()
+		end
+	end
 end
 
 local function stepGate(now: number)
@@ -17719,9 +17853,22 @@ local function stepGate(now: number)
 			local on = index <= lit
 			segment.Transparency = if on then 0.05 else 0.85
 			segment.Color = if finalSeconds then Color3.new(1, 0.92, 0.75) else hot
+			-- 마지막 3초에는 고리가 조금 커진다
+			local size = entry.segmentSizes[index]
+			if size then
+				segment.Size = if finalSeconds
+					then Vector3.new(size.X * 1.12, size.Y, size.Z * 1.6)
+					else size
+			end
 		end
+		-- 기둥 문양이 아래에서 위로 차오른다 (출발에 가까울수록 높이)
+		fillRunes(entry, 1 - remaining / window)
 		for _, rune in entry.runes do
 			rune.Transparency = if finalSeconds then 0 else 0.15
+		end
+		if finalSeconds and entry.fountain and now >= entry.nextFountain then
+			entry.nextFountain = now + 0.08
+			entry.fountain:Emit(4)
 		end
 		if entry.boardLabel then
 			entry.boardLabel.Text = Locale.get(
@@ -17735,10 +17882,15 @@ local function stepGate(now: number)
 	else
 		-- 대기 없음: 천천히 숨 쉰다 (2.6초)
 		local breathe = 0.5 + 0.5 * math.sin(now / 2.6 * math.pi * 2)
-		for _, segment in entry.segments do
+		for index, segment in entry.segments do
 			segment.Transparency = 0.35 + 0.45 * breathe
 			segment.Color = molten
+			local size = entry.segmentSizes[index]
+			if size then
+				segment.Size = size
+			end
 		end
+		fillRunes(entry, 1)
 		for _, rune in entry.runes do
 			rune.Transparency = 0.2 + 0.5 * breathe
 		end
@@ -17752,11 +17904,16 @@ local function stepGate(now: number)
 		fall.Transparency = 0.1 + 0.35 * (0.5 + 0.5 * math.sin(now * (1.6 + index * 0.4) + index))
 	end
 
+	if now >= entry.nextOutlineCheck then
+		entry.nextOutlineCheck = now + 0.2
+		updateRingOutlines(count > 0)
+	end
+
 	local launchAt = tonumber(entry.model:GetAttribute(A.launchAt)) or 0
 	if launchAt > entry.lastLaunch then
 		entry.lastLaunch = launchAt
 		if serverNow() - launchAt < 3 then
-			launchPillar(entry.ringCenter)
+			lightPillar(entry.ringCenter, World.GATE.ringRadius)
 		end
 	end
 end
@@ -17941,6 +18098,13 @@ local function setupShowcase(lobbyFolder: Instance)
 		local level = tonumber(base:GetAttribute(A.swordLevel)) or 0
 		if level > entry.lastLevel and level > 0 then
 			say(Locale.get(ClientState.getLanguage(), "npc.shout.record"), 3)
+			local glass = folder:FindFirstChild("ShowcaseGlass")
+			if glass and glass:IsA("BasePart") then
+				local original = glass.Transparency
+				glass.Transparency = 0.15
+				TweenService:Create(glass, TweenInfo.new(0.8), { Transparency = original }):Play()
+				puff(glass, rgb(Palette.WORLD.gold), 24, 10, 0.3)
+			end
 		end
 		entry.lastLevel = level
 		refreshShowcaseText()
@@ -18058,8 +18222,28 @@ local function onRaceUpdate(payload: any)
 				end
 			end
 		end
+	elseif payload.kind == "eliminated" then
+		-- 잡힌 사람: 주황 외곽선과 함께 굳고 연기 한 번
+		local player = Players:GetPlayerByUserId(tonumber(payload.userId) or 0)
+		local character = if player then player.Character else nil
+		local root = if character then character:FindFirstChild("HumanoidRootPart") else nil
+		if character and root and root:IsA("BasePart") then
+			local highlight = outline(character, "ForgeCaughtOutline")
+			puff(root, Color3.fromRGB(110, 100, 104), 18, 6, 1.2)
+			task.delay(2.5, function()
+				highlight:Destroy()
+			end)
+		end
 	elseif payload.kind == "lobby" then
 		clearCourse()
+		-- 로비로 돌아올 때 빛기둥 속에서 나타난다
+		task.delay(0.1, function()
+			local character = Players.LocalPlayer.Character
+			local root = if character then character:FindFirstChild("HumanoidRootPart") else nil
+			if root and root:IsA("BasePart") then
+				lightPillar(root.Position - Vector3.new(0, 2.5, 0), 3)
+			end
+		end)
 	end
 end
 
@@ -18254,6 +18438,17 @@ function WorldFxController.Init()
 
 	local raceRemote = remotesFolder:WaitForChild(Remotes.Events.RaceUpdate) :: RemoteEvent
 	raceRemote.OnClientEvent:Connect(onRaceUpdate)
+
+	local treadmillRemote =
+		remotesFolder:WaitForChild(Remotes.Events.TreadmillUpdate) :: RemoteEvent
+	treadmillRemote.OnClientEvent:Connect(function(payload: any)
+		if type(payload) ~= "table" then
+			return
+		end
+		myOnPad = payload.onPad == true
+		local interval = tonumber(payload.interval) or 0
+		myPadProgress = if interval > 0 then (tonumber(payload.progress) or 0) / interval else 0
+	end)
 
 	ClientState.onChanged(function()
 		refreshPreview()
