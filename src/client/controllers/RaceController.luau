@@ -1,23 +1,22 @@
 --!strict
 --[[
-	RaceController — 경주 화면 (통합 기획서 4절, 8절).
+	RaceController — 경주 화면 (통합 기획서 4·8-1절 결정 8).
 
-	출발선에 선 순간부터 로비로 돌아올 때까지의 화면을 맡는다.
-	  출발 전   카운트다운
-	  달리는 중 지금 거리 / 내 최대 거리, 추격자와의 간격
-	  탈락 후   결과(순위·거리·보상), 관전(다른 사람 화면), "로비로" 버튼
-	  판 종료   최종 순위표
+	출발선에 선 순간부터 로비로 돌아올 때까지:
+	  출발 전   화면 가운데 3 · 2 · 1 · 출발!
+	  달리는 중 위쪽 가운데 진행 막대: 참가자 전원의 위치 점(나는 크고 주황), 추격자(빨강).
+	            내 거리 / 내 최대 거리, 남은 사람 n/m, 추격자와의 간격(30칸 아래면 빨갛게 + 화면 가장자리 맥박)
+	  탈락 후   결과 카드(순위·거리·최대 거리 대비 %·보상이 0부터 올라감), "다음 사람"·"로비로"
+	  판 종료   순위표(상위 5명 + 내 순위), 자동 복귀 카운트다운
+	특수 능력 버튼 자리(D16)는 점프 버튼 왼쪽에 만들어 두고 지금은 숨긴다.
 
-	클라이언트는 표시만 한다.
-	- 화면의 "지금 거리"와 "추격자와의 간격"은 내 화면에 보이는 위치로 계산한 참고 값이다.
-	- 결과(인정 거리·순위·보상)는 전부 서버가 보낸 값을 그대로 보여 준다.
-	- 서버로 보내는 것은 "로비로" 요청 하나뿐이다. 거리나 위치는 보내지 않는다.
-
-	[미정 D16] 특수 능력 버튼은 능력이 정해지면 이 화면에 추가한다.
+	클라이언트는 표시만 한다. 진행 막대의 점·간격은 내 화면에 보이는 위치로 계산한 참고 값이고,
+	결과(인정 거리·순위·보상)는 서버가 보낸 값을 그대로 보여 준다. 서버로 보내는 것은 "로비로" 하나뿐이다.
 ]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
@@ -26,202 +25,209 @@ local Remotes = require(Shared:WaitForChild("Remotes"))
 local Format = require(Shared:WaitForChild("Pure"):WaitForChild("Format"))
 local World = require(Shared:WaitForChild("Config"):WaitForChild("World"))
 
+local client = script.Parent.Parent
+local ClientState = require(client:WaitForChild("ClientState"))
+local ui = client:WaitForChild("ui")
+local Theme = require(ui:WaitForChild("Theme"))
+local Components = require(ui:WaitForChild("Components"))
+local ScreenManager = require(ui:WaitForChild("ScreenManager"))
+
 local controllers = script.Parent
-local ClientState = require(controllers.Parent:WaitForChild("ClientState"))
 local FeedController = require(controllers:WaitForChild("FeedController"))
 local SoundController = require(controllers:WaitForChild("SoundController"))
 
 local RaceController = {}
 RaceController.Name = "RaceController"
 
-local COLOR_PANEL = Color3.fromRGB(34, 30, 38)
-local COLOR_SUB = Color3.fromRGB(52, 46, 58)
-local COLOR_TEXT = Color3.fromRGB(240, 236, 230)
-local COLOR_MUTED = Color3.fromRGB(200, 194, 204)
-local COLOR_ACCENT = Color3.fromRGB(226, 142, 58)
-local COLOR_DANGER = Color3.fromRGB(255, 120, 108)
-local COLOR_GOLD = Color3.fromRGB(255, 208, 112)
-
-local TOUCH_MIN = 44
+local C = Theme.color
 local MAX_RANK_ROWS = 5
-local HUD_INTERVAL_SECONDS = 0.1
+local HUD_INTERVAL = 0.08
 local GO_TEXT_SECONDS = 1
+local DANGER_GAP = 30
 
-type Entrant = {
-	userId: number,
-	name: string,
-	level: number,
-	alive: boolean,
-}
+type Entrant = { userId: number, name: string, level: number, alive: boolean, dot: Frame? }
 
 type RaceView = {
 	id: number,
 	originZ: number,
 	level: number,
 	maxDistance: number,
-	entrants: { Entrant }, -- 서버가 보낸 순서
+	entrants: { Entrant },
 }
 
--- none: 경주 중 아님 / lineup: 출발 전 / racing: 달리는 중 / out: 탈락(관전)
-local mode: "none" | "lineup" | "racing" | "out" = "none"
+local phase: "none" | "lineup" | "racing" | "out" = "none"
 local view: RaceView? = nil
-local goAt = 0 -- 출발 예정 시각 (os.clock)
+local goAt = 0
 local startedAt = 0
 local spectateUserId: number? = nil
 local resultPayload: any = nil
 local finishedPayload: any = nil
 local returnAt = 0
 local chaserPart: BasePart? = nil
+local lastCountdown = -1
 
 local gui: ScreenGui
+local hud: Frame
 local distanceLabel: TextLabel
+local aliveLabel: TextLabel
+local track: Frame
+local trackFill: Frame
+local chaserMark: Frame
+local dotsLayer: Frame
 local gapLabel: TextLabel
 local countdownLabel: TextLabel
-local resultPanel: Frame
+local abilitySlot: Frame
+local resultCard: Frame
 local resultTitle: TextLabel
 local resultBody: TextLabel
+local rewardLabel: TextLabel
 local nextButton: TextButton
 local lobbyButton: TextButton
 
+local edgeGui: ScreenGui
+local edgeFrames: { Frame } = {}
+
 local lobbyRemote: RemoteFunction
 
-local function corner(parent: Instance, radius: number)
-	local instance = Instance.new("UICorner")
-	instance.CornerRadius = UDim.new(0, radius)
-	instance.Parent = parent
-end
-
-local function makeLabel(parent: Instance, props: { [string]: any }): TextLabel
-	local label = Instance.new("TextLabel")
-	label.BackgroundTransparency = 1
-	label.BorderSizePixel = 0
-	label.Font = Enum.Font.GothamBold
-	label.TextColor3 = COLOR_TEXT
-	label.TextSize = 18
-	label.Text = ""
-	for key, value in props do
-		(label :: any)[key] = value
-	end
-	label.Parent = parent
-	return label
-end
-
-local function makeButton(parent: Instance, props: { [string]: any }): TextButton
-	local button = Instance.new("TextButton")
-	button.BackgroundColor3 = COLOR_SUB
-	button.BorderSizePixel = 0
-	button.Font = Enum.Font.GothamBold
-	button.TextColor3 = COLOR_TEXT
-	button.TextSize = 16
-	button.Text = ""
-	for key, value in props do
-		(button :: any)[key] = value
-	end
-	button.Parent = parent
-	corner(button, 10)
-	return button
-end
+--------------------------------------------------------------------------------
+-- 만들기
+--------------------------------------------------------------------------------
 
 local function build()
-	local player = Players.LocalPlayer
-
-	gui = Instance.new("ScreenGui")
-	gui.Name = "ForgeRace"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.DisplayOrder = 3
+	gui = ScreenManager.createScreen("ForgeRace", 6)
 	gui.Enabled = false
-	gui.Parent = player:WaitForChild("PlayerGui")
 
-	-- 위쪽 가운데: 거리와 추격자 간격
-	local top = Instance.new("Frame")
-	top.Name = "Top"
-	top.BackgroundColor3 = Color3.fromRGB(18, 16, 20)
-	top.BackgroundTransparency = 0.35
-	top.BorderSizePixel = 0
-	top.AnchorPoint = Vector2.new(0.5, 0)
-	top.Position = UDim2.new(0.5, 0, 0, 44)
-	top.Size = UDim2.fromOffset(300, 62)
-	top.Parent = gui
-	corner(top, 10)
-
-	distanceLabel = makeLabel(top, {
-		Size = UDim2.new(1, 0, 0, 32),
-		Position = UDim2.fromOffset(0, 2),
-		TextSize = 20,
+	hud = Components.panel(gui, { Name = "Hud", BackgroundColor3 = C.bg })
+	distanceLabel = Components.label(
+		hud,
+		{ font = Theme.font.display, size = Theme.text.label, outline = true }
+	)
+	distanceLabel.Position = UDim2.fromOffset(14, 6)
+	distanceLabel.Size = UDim2.new(0.6, -14, 0, 26)
+	aliveLabel = Components.label(hud, {
+		font = Theme.font.bodyBold,
+		size = Theme.text.small,
+		color = C.muted,
+		align = Enum.TextXAlignment.Right,
 	})
-	gapLabel = makeLabel(top, {
-		Size = UDim2.new(1, 0, 0, 24),
-		Position = UDim2.fromOffset(0, 34),
-		TextSize = 15,
-		Font = Enum.Font.GothamMedium,
-		TextColor3 = COLOR_DANGER,
-	})
+	aliveLabel.Position = UDim2.new(0.6, 0, 0, 6)
+	aliveLabel.Size = UDim2.new(0.4, -14, 0, 26)
 
-	-- 가운데: 출발 카운트다운
-	countdownLabel = makeLabel(gui, {
+	track = Components.frame(hud, {
+		BackgroundColor3 = C.sub,
+		BackgroundTransparency = 0,
+		Position = UDim2.fromOffset(14, 36),
+		Size = UDim2.new(1, -28, 0, 12),
+	})
+	Components.round(track)
+	trackFill = Components.frame(track, {
+		BackgroundColor3 = Theme.shade(C.ember, -0.3),
+		BackgroundTransparency = 0,
+		Size = UDim2.fromScale(0, 1),
+	})
+	Components.round(trackFill)
+	chaserMark = Components.frame(track, {
+		BackgroundColor3 = C.fail,
+		BackgroundTransparency = 0,
+		Size = UDim2.new(0, 6, 1, 10),
 		AnchorPoint = Vector2.new(0.5, 0.5),
-		Position = UDim2.fromScale(0.5, 0.36),
-		Size = UDim2.fromOffset(320, 110),
-		TextSize = 84,
-		TextColor3 = COLOR_ACCENT,
-		Visible = false,
+		Position = UDim2.fromScale(0, 0.5),
+		ZIndex = 3,
 	})
+	Components.corner(chaserMark, 3)
+	dotsLayer = Components.frame(track, { ZIndex = 4 })
 
-	-- 아래쪽 가운데: 결과와 관전 조작
-	resultPanel = Instance.new("Frame")
-	resultPanel.Name = "Result"
-	resultPanel.BackgroundColor3 = COLOR_PANEL
-	resultPanel.BackgroundTransparency = 0.08
-	resultPanel.BorderSizePixel = 0
-	resultPanel.AnchorPoint = Vector2.new(0.5, 1)
-	resultPanel.Position = UDim2.new(0.5, 0, 1, -16)
-	resultPanel.Size = UDim2.new(0.9, 0, 0, 236)
-	resultPanel.Visible = false
-	resultPanel.Parent = gui
-	corner(resultPanel, 14)
+	gapLabel = Components.label(
+		hud,
+		{ font = Theme.font.bodyBold, size = Theme.text.small, align = Enum.TextXAlignment.Center }
+	)
+	gapLabel.Position = UDim2.new(0, 0, 1, -24)
+	gapLabel.Size = UDim2.new(1, 0, 0, 22)
 
-	local sizeConstraint = Instance.new("UISizeConstraint")
-	sizeConstraint.MaxSize = Vector2.new(380, math.huge)
-	sizeConstraint.Parent = resultPanel
-
-	local padding = Instance.new("UIPadding")
-	padding.PaddingTop = UDim.new(0, 12)
-	padding.PaddingBottom = UDim.new(0, 12)
-	padding.PaddingLeft = UDim.new(0, 14)
-	padding.PaddingRight = UDim.new(0, 14)
-	padding.Parent = resultPanel
-
-	resultTitle = makeLabel(resultPanel, {
-		Size = UDim2.new(1, 0, 0, 26),
-		TextSize = 20,
-		TextColor3 = COLOR_ACCENT,
-		TextXAlignment = Enum.TextXAlignment.Left,
+	countdownLabel = Components.label(gui, {
+		font = Theme.font.display,
+		size = 120,
+		color = C.ember,
+		outline = true,
+		align = Enum.TextXAlignment.Center,
 	})
-	resultBody = makeLabel(resultPanel, {
-		Size = UDim2.new(1, 0, 1, -(26 + 6 + TOUCH_MIN + 6)),
-		Position = UDim2.fromOffset(0, 32),
-		TextSize = 14,
-		Font = Enum.Font.GothamMedium,
-		TextColor3 = COLOR_MUTED,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		TextWrapped = true,
-	})
+	countdownLabel.AnchorPoint = Vector2.new(0.5, 0.5)
+	countdownLabel.Size = UDim2.fromOffset(400, 150)
+	countdownLabel.Visible = false
+	local countStroke = countdownLabel:FindFirstChildOfClass("UIStroke")
+	if countStroke then
+		countStroke.Thickness = 5
+	end
+	local countScale = Instance.new("UIScale")
+	countScale.Parent = countdownLabel
 
-	nextButton = makeButton(resultPanel, {
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 0, 1, 0),
-		Size = UDim2.new(0.5, -4, 0, TOUCH_MIN),
-		Font = Enum.Font.GothamMedium,
+	-- 특수 능력 버튼 자리 (D16 미정이라 숨김)
+	abilitySlot = Components.frame(gui, { Name = "AbilitySlot", Visible = false })
+
+	resultCard = Components.panel(gui, { Name = "Result", Visible = false })
+	resultTitle = Components.label(
+		resultCard,
+		{ font = Theme.font.display, size = Theme.text.title, color = C.ember, outline = true }
+	)
+	resultTitle.Position = UDim2.fromOffset(16, 10)
+	resultTitle.Size = UDim2.new(0.5, -16, 0, 34)
+	rewardLabel = Components.label(resultCard, {
+		font = Theme.font.display,
+		size = Theme.text.title,
+		color = C.gold,
+		outline = true,
+		align = Enum.TextXAlignment.Right,
 	})
-	lobbyButton = makeButton(resultPanel, {
-		AnchorPoint = Vector2.new(1, 1),
-		Position = UDim2.new(1, 0, 1, 0),
-		Size = UDim2.new(0.5, -4, 0, TOUCH_MIN),
-		BackgroundColor3 = COLOR_ACCENT,
-		TextColor3 = Color3.fromRGB(24, 18, 10),
-	})
+	rewardLabel.Position = UDim2.new(0.5, 0, 0, 10)
+	rewardLabel.Size = UDim2.new(0.5, -16, 0, 34)
+	resultBody =
+		Components.label(resultCard, { size = Theme.text.small, color = C.muted, wrap = true })
+	resultBody.TextYAlignment = Enum.TextYAlignment.Top
+	resultBody.Position = UDim2.fromOffset(16, 48)
+	resultBody.Size = UDim2.new(1, -32, 1, -(48 + Theme.touchHeight + 20))
+
+	nextButton = Components.button(resultCard, { style = "secondary", size = Theme.text.body })
+	nextButton.AnchorPoint = Vector2.new(0, 1)
+	nextButton.Position = UDim2.new(0, 16, 1, -12)
+	nextButton.Size = UDim2.new(0.5, -20, 0, Theme.touchHeight)
+	lobbyButton = Components.button(resultCard, { style = "primary", size = Theme.text.body })
+	lobbyButton.AnchorPoint = Vector2.new(1, 1)
+	lobbyButton.Position = UDim2.new(1, -16, 1, -12)
+	lobbyButton.Size = UDim2.new(0.5, -20, 0, Theme.touchHeight)
+
+	-- 추격자가 가까울 때 화면 가장자리가 붉게 맥박친다
+	edgeGui = ScreenManager.createOverlay("ForgeRaceEdge", 2)
+	edgeGui.Enabled = false
+	local sides = {
+		{ UDim2.new(1, 0, 0.2, 0), UDim2.fromScale(0, 0), 90 },
+		{ UDim2.new(1, 0, 0.2, 0), UDim2.fromScale(0, 0.8), -90 },
+		{ UDim2.new(0.15, 0, 1, 0), UDim2.fromScale(0, 0), 0 },
+		{ UDim2.new(0.15, 0, 1, 0), UDim2.fromScale(0.85, 0), 180 },
+	}
+	for _, side in sides do
+		local frame = Instance.new("Frame")
+		frame.BorderSizePixel = 0
+		frame.BackgroundColor3 = C.fail
+		frame.Size = side[1]
+		frame.Position = side[2]
+		frame.Parent = edgeGui
+		local gradient = Instance.new("UIGradient")
+		gradient.Transparency = NumberSequence.new(0.2, 1)
+		gradient.Rotation = side[3]
+		gradient.Parent = frame
+		table.insert(edgeFrames, frame)
+	end
+end
+
+local function place()
+	local layout = ScreenManager.getLayout()
+	if layout == nil then
+		return
+	end
+	ScreenManager.place(hud, layout.raceHud)
+	ScreenManager.place(abilitySlot, layout.raceAbility)
+	ScreenManager.place(resultCard, layout.raceResult)
+	countdownLabel.Position = UDim2.fromOffset(layout.width / 2, layout.height * 0.4)
 end
 
 --------------------------------------------------------------------------------
@@ -250,13 +256,11 @@ local function rootOf(player: Player?): BasePart?
 	return nil
 end
 
--- 카메라가 따라갈 사람을 정한다. nil 이면 나 자신.
 local function setCameraSubject(player: Player?)
 	local camera = Workspace.CurrentCamera
 	if camera == nil then
 		return
 	end
-
 	local target = player or Players.LocalPlayer
 	local character = target.Character
 	local humanoid = if character then character:FindFirstChildOfClass("Humanoid") else nil
@@ -265,17 +269,14 @@ local function setCameraSubject(player: Player?)
 	end
 end
 
--- 아직 달리고 있는 다른 사람 중 after 다음 사람을 고른다. 없으면 nil.
 local function nextAlive(after: number?): number?
 	local current = view
 	if current == nil then
 		return nil
 	end
-
 	local localId = Players.LocalPlayer.UserId
 	local entrants = current.entrants
 	local count = #entrants
-
 	local startIndex = 0
 	for index, entrant in entrants do
 		if entrant.userId == after then
@@ -283,7 +284,6 @@ local function nextAlive(after: number?): number?
 			break
 		end
 	end
-
 	for offset = 1, count do
 		local entrant = entrants[(startIndex + offset - 1) % count + 1]
 		if
@@ -302,33 +302,55 @@ local function spectate(userId: number?)
 	setCameraSubject(if userId then Players:GetPlayerByUserId(userId) else nil)
 end
 
---------------------------------------------------------------------------------
--- 그리기
---------------------------------------------------------------------------------
-
 local function findChaser(): BasePart?
 	local current = view
 	if current == nil then
 		return nil
 	end
-
 	local cached = chaserPart
 	if cached and cached.Parent ~= nil then
 		return cached
 	end
-
 	local races = Workspace:FindFirstChild(World.RACES_FOLDER)
 	local folder = if races
 		then races:FindFirstChild(`{World.RACE_FOLDER_PREFIX}{current.id}`)
 		else nil
 	local part = if folder then folder:FindFirstChild(World.CHASER_NAME) else nil
-
 	if part and part:IsA("BasePart") then
 		chaserPart = part
 		return part
 	end
 	return nil
 end
+
+-- 진행 막대의 참가자 점 (처음 한 번 만든다)
+local function buildDots()
+	Components.clear(dotsLayer)
+	local current = view
+	if current == nil then
+		return
+	end
+	local localId = Players.LocalPlayer.UserId
+	for _, entrant in current.entrants do
+		local mine = entrant.userId == localId
+		local size = if mine then 18 else 12
+		local dot = Components.frame(dotsLayer, {
+			BackgroundColor3 = if mine then C.ember else Theme.heatColor(entrant.level),
+			BackgroundTransparency = 0,
+			Size = UDim2.fromOffset(size, size),
+			AnchorPoint = Vector2.new(0.5, 0.5),
+			Position = UDim2.fromScale(0, 0.5),
+			ZIndex = if mine then 6 else 5,
+		})
+		Components.round(dot)
+		Components.stroke(dot, C.outline, if mine then 3 else 2)
+		entrant.dot = dot
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 그리기
+--------------------------------------------------------------------------------
 
 local function resultText(language: string): string
 	local lines: { string } = {}
@@ -338,7 +360,6 @@ local function resultText(language: string): string
 		local distance = tonumber(result.distance) or 0
 		local maxDistance = tonumber(result.maxDistance) or 0
 		local ratio = if maxDistance > 0 then math.min(1, distance / maxDistance) else 0
-
 		table.insert(
 			lines,
 			Locale.get(
@@ -350,11 +371,6 @@ local function resultText(language: string): string
 				Format.ratio(ratio, 0)
 			)
 		)
-		table.insert(
-			lines,
-			Locale.get(language, "ui.race.reward", Format.comma(tonumber(result.reward) or 0))
-		)
-
 		local bonus = tonumber(result.bonus) or 0
 		if bonus > 0 then
 			table.insert(lines, Locale.get(language, "ui.race.bonus", Format.comma(bonus)))
@@ -363,14 +379,18 @@ local function resultText(language: string): string
 
 	local finished = finishedPayload
 	if type(finished) == "table" and type(finished.ranking) == "table" then
-		local secondsLeft = math.max(0, math.ceil(returnAt - os.clock()))
-		table.insert(lines, Locale.get(language, "ui.race.finished", secondsLeft))
-
+		table.insert(
+			lines,
+			Locale.get(language, "ui.race.finished", math.max(0, math.ceil(returnAt - os.clock())))
+		)
+		local localId = Players.LocalPlayer.UserId
+		local shownMine = false
 		for index, row in finished.ranking do
-			if index > MAX_RANK_ROWS then
-				break
+			if type(row) ~= "table" then
+				continue
 			end
-			if type(row) == "table" then
+			local mine = row.userId == localId
+			if index <= MAX_RANK_ROWS or (mine and not shownMine) then
 				table.insert(
 					lines,
 					Locale.get(
@@ -382,6 +402,9 @@ local function resultText(language: string): string
 						Format.comma(tonumber(row.distance) or 0)
 					)
 				)
+				if mine then
+					shownMine = true
+				end
 			end
 		end
 	else
@@ -397,80 +420,138 @@ local function resultText(language: string): string
 	return table.concat(lines, "\n")
 end
 
+local function setEdge(danger: boolean)
+	edgeGui.Enabled = danger
+	if danger then
+		local pulse = 0.25 + 0.25 * math.sin(os.clock() * 8)
+		for _, frame in edgeFrames do
+			frame.BackgroundTransparency = pulse
+		end
+	end
+end
+
 local function render()
 	local language = ClientState.getLanguage()
 	local current = view
 
-	gui.Enabled = mode ~= "none"
-	if mode == "none" or current == nil then
+	gui.Enabled = phase ~= "none"
+	if phase == "none" or current == nil then
+		setEdge(false)
 		return
 	end
 
 	local now = os.clock()
 
-	-- 카운트다운 / 출발 표시
-	if mode == "lineup" then
+	-- 카운트다운
+	if phase == "lineup" then
+		local number = math.max(1, math.ceil(goAt - now))
 		countdownLabel.Visible = true
-		countdownLabel.Text = tostring(math.max(1, math.ceil(goAt - now)))
-	elseif mode == "racing" and now - startedAt < GO_TEXT_SECONDS then
+		countdownLabel.Text = tostring(number)
+		if number ~= lastCountdown then
+			lastCountdown = number
+			SoundController.play("tick")
+			local scale = countdownLabel:FindFirstChildOfClass("UIScale") :: UIScale
+			scale.Scale = 1.5
+			TweenService:Create(scale, Theme.motion.pop, { Scale = 1 }):Play()
+		end
+	elseif phase == "racing" and now - startedAt < GO_TEXT_SECONDS then
 		countdownLabel.Visible = true
 		countdownLabel.Text = Locale.get(language, "ui.race.go")
 	else
 		countdownLabel.Visible = false
 	end
 
-	-- 거리와 추격자 간격. 관전 중이면 보고 있는 사람 기준.
-	local watchedPlayer = Players.LocalPlayer
-	local watchedMax = current.maxDistance
-	if mode == "out" and spectateUserId ~= nil then
-		local other = Players:GetPlayerByUserId(spectateUserId)
-		if other then
-			watchedPlayer = other
-			watchedMax = 0
-		end
+	-- 진행 막대
+	local localPlayer = Players.LocalPlayer
+	local watched = localPlayer
+	if phase == "out" and spectateUserId ~= nil then
+		watched = Players:GetPlayerByUserId(spectateUserId) or localPlayer
 	end
 
-	local root = rootOf(watchedPlayer)
 	local chaser = findChaser()
+	local chaserFront = if chaser
+		then chaser.Position.Z + chaser.Size.Z / 2 - current.originZ
+		else -30
 
-	if root then
-		local distance = math.max(0, math.floor(root.Position.Z - current.originZ))
-
-		if watchedMax > 0 then
-			distanceLabel.Text = Locale.get(
-				language,
-				"ui.race.distance",
-				Format.comma(distance),
-				Format.comma(math.floor(watchedMax))
-			)
-		else
-			distanceLabel.Text =
-				Locale.get(language, "ui.race.distanceOnly", Format.comma(distance))
+	local trackMax = math.max(current.maxDistance, 1)
+	local positions: { [number]: number } = {}
+	local aliveCount = 0
+	for _, entrant in current.entrants do
+		if entrant.alive then
+			aliveCount += 1
 		end
-
-		if chaser then
-			local front = chaser.Position.Z + chaser.Size.Z / 2
-			local gap = math.max(0, math.floor(root.Position.Z - front))
-			gapLabel.Text = Locale.get(language, "ui.race.gap", Format.comma(gap))
-		else
-			gapLabel.Text = ""
+		local root = rootOf(Players:GetPlayerByUserId(entrant.userId))
+		if root then
+			local distance = math.max(0, root.Position.Z - current.originZ)
+			positions[entrant.userId] = distance
+			trackMax = math.max(trackMax, distance * 1.05)
 		end
-	else
-		distanceLabel.Text = ""
-		gapLabel.Text = ""
 	end
 
-	-- 결과 패널
-	resultPanel.Visible = mode == "out"
-	if mode == "out" then
+	for _, entrant in current.entrants do
+		local dot = entrant.dot
+		if dot then
+			local distance = positions[entrant.userId]
+			dot.Visible = distance ~= nil and entrant.alive
+			if distance then
+				dot.Position = UDim2.fromScale(math.clamp(distance / trackMax, 0, 1), 0.5)
+			end
+		end
+	end
+	chaserMark.Position = UDim2.fromScale(math.clamp(chaserFront / trackMax, 0, 1), 0.5)
+
+	local myDistance = positions[watched.UserId] or 0
+	trackFill.Size = UDim2.fromScale(math.clamp(myDistance / trackMax, 0, 1), 1)
+
+	if watched == localPlayer then
+		distanceLabel.Text = Locale.get(
+			language,
+			"ui.race.distance",
+			Format.comma(math.floor(myDistance)),
+			Format.comma(math.floor(current.maxDistance))
+		)
+	else
+		distanceLabel.Text =
+			Locale.get(language, "ui.race.distanceOnly", Format.comma(math.floor(myDistance)))
+	end
+	aliveLabel.Text = Locale.get(language, "ui.race.alive", aliveCount, #current.entrants)
+
+	local gap = math.max(0, math.floor(myDistance - chaserFront))
+	gapLabel.Text = Locale.get(language, "ui.race.gap", Format.comma(gap))
+	local danger = phase == "racing" and gap < DANGER_GAP
+	gapLabel.TextColor3 = if danger then C.fail else C.text
+	setEdge(danger)
+
+	-- 결과 카드
+	resultCard.Visible = phase == "out"
+	if phase == "out" then
 		resultTitle.Text = Locale.get(language, "ui.race.caught")
 		resultBody.Text = resultText(language)
 		nextButton.Text = Locale.get(language, "ui.race.next")
 		lobbyButton.Text = Locale.get(language, "ui.race.toLobby")
-
-		local canSwitch = finishedPayload == nil and nextAlive(spectateUserId) ~= nil
-		nextButton.Visible = canSwitch
+		nextButton.Visible = finishedPayload == nil and nextAlive(spectateUserId) ~= nil
 	end
+end
+
+-- 보상 숫자가 0 부터 올라간다 (0.8초)
+local function countUpReward(amount: number)
+	local language = ClientState.getLanguage()
+	task.spawn(function()
+		local duration = 0.8
+		local started = os.clock()
+		while true do
+			local t = math.min(1, (os.clock() - started) / duration)
+			local eased = 1 - (1 - t) ^ 3
+			rewardLabel.Text = "+" .. Format.short(math.floor(amount * eased), language)
+			if t >= 1 then
+				break
+			end
+			task.wait(0.03)
+		end
+		if amount > 0 then
+			SoundController.play("coin")
+		end
+	end)
 end
 
 --------------------------------------------------------------------------------
@@ -478,15 +559,17 @@ end
 --------------------------------------------------------------------------------
 
 local function leaveRaceView()
-	mode = "none"
+	phase = "none"
 	view = nil
 	spectateUserId = nil
 	resultPayload = nil
 	finishedPayload = nil
 	chaserPart = nil
+	lastCountdown = -1
+	Components.clear(dotsLayer)
 
 	setCameraSubject(nil)
-	ClientState.setInRace(false)
+	ScreenManager.setMode("lobby")
 	render()
 end
 
@@ -513,15 +596,18 @@ local function onLineup(payload: any)
 		entrants = entrants,
 	}
 
-	mode = "lineup"
+	phase = "lineup"
 	goAt = os.clock() + (tonumber(payload.countdown) or 0)
 	spectateUserId = nil
 	resultPayload = nil
 	finishedPayload = nil
 	chaserPart = nil
+	lastCountdown = -1
+	rewardLabel.Text = ""
 
+	buildDots()
 	setCameraSubject(nil)
-	ClientState.setInRace(true)
+	ScreenManager.setMode("race")
 	render()
 end
 
@@ -531,7 +617,6 @@ local function onRaceUpdate(payload: any)
 	end
 
 	local kind = payload.kind
-
 	if kind == "lineup" then
 		onLineup(payload)
 		return
@@ -540,52 +625,51 @@ local function onRaceUpdate(payload: any)
 		return
 	end
 
-	-- 아래 알림은 지금 보고 있는 판의 것만 받는다.
 	local current = view
 	if current == nil or payload.raceId ~= current.id then
 		return
 	end
 
 	if kind == "start" then
-		if mode == "lineup" then
-			mode = "racing"
+		if phase == "lineup" then
+			phase = "racing"
 			startedAt = os.clock()
+			SoundController.play("go")
 		end
 	elseif kind == "eliminated" then
 		local entrant = findEntrant(tonumber(payload.userId))
 		if entrant then
 			entrant.alive = false
 		end
-
-		-- 보고 있던 사람이 잡혔으면 다른 사람으로 넘어간다.
-		if mode == "out" and spectateUserId == payload.userId then
+		if phase == "out" and spectateUserId == payload.userId then
 			spectate(nextAlive(spectateUserId))
 		end
 	elseif kind == "result" then
-		mode = "out"
+		phase = "out"
 		resultPayload = payload
-
 		local mine = findEntrant(Players.LocalPlayer.UserId)
 		if mine then
 			mine.alive = false
 		end
 
-		SoundController.play("fail")
+		SoundController.play("caught")
+		local reward = tonumber(payload.reward) or 0
 		FeedController.pushRaw(
 			Locale.get(
 				ClientState.getLanguage(),
 				"ui.race.rewardFeed",
-				Format.comma(tonumber(payload.reward) or 0),
+				Format.comma(reward),
 				Format.comma(tonumber(payload.distance) or 0)
 			),
-			COLOR_GOLD
+			C.gold
 		)
-
+		countUpReward(reward)
+		ScreenManager.setMode("raceOut")
 		spectate(nextAlive(nil))
 	elseif kind == "finished" then
 		finishedPayload = payload
 		returnAt = os.clock() + (tonumber(payload.returnIn) or 0)
-		if mode == "out" then
+		if phase == "out" then
 			spectate(nil)
 		end
 	end
@@ -597,15 +681,12 @@ local function requestLobby()
 	local ok, response = pcall(function()
 		return lobbyRemote:InvokeServer()
 	end)
-
 	if ok and type(response) == "table" and response.ok == true then
-		-- 서버도 kind = "lobby" 를 보내지만, 놓쳤을 때를 대비해 여기서도 화면을 닫는다.
 		leaveRaceView()
 		return
 	end
-
 	local reason = if ok and type(response) == "table" then tostring(response.reason) else "unknown"
-	FeedController.pushRaw(Locale.get(ClientState.getLanguage(), `error.{reason}`), COLOR_DANGER)
+	FeedController.pushRaw(Locale.get(ClientState.getLanguage(), `error.{reason}`), C.fail)
 end
 
 function RaceController.Init()
@@ -613,7 +694,6 @@ function RaceController.Init()
 
 	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
 	lobbyRemote = remotesFolder:WaitForChild(Remotes.Functions.ReturnToLobby) :: RemoteFunction
-
 	local raceRemote = remotesFolder:WaitForChild(Remotes.Events.RaceUpdate) :: RemoteEvent
 	raceRemote.OnClientEvent:Connect(onRaceUpdate)
 
@@ -622,38 +702,38 @@ function RaceController.Init()
 		spectate(nextAlive(spectateUserId))
 		render()
 	end)
-
 	lobbyButton.Activated:Connect(function()
 		SoundController.play("click")
 		task.spawn(requestLobby)
 	end)
 
+	ScreenManager.onLayout(place)
 	render()
 end
 
 function RaceController.Start()
-	-- 경주 화면이 떠 있는 동안 숫자를 다시 그린다.
 	task.spawn(function()
 		while true do
-			task.wait(HUD_INTERVAL_SECONDS)
-
-			if mode == "none" then
+			task.wait(HUD_INTERVAL)
+			if phase == "none" then
 				continue
 			end
-
-			-- 관전하던 사람이 나갔으면 다른 사람으로 넘어간다.
-			if mode == "out" and spectateUserId ~= nil and finishedPayload == nil then
+			if phase == "out" and spectateUserId ~= nil and finishedPayload == nil then
 				if Players:GetPlayerByUserId(spectateUserId) == nil then
 					spectate(nextAlive(spectateUserId))
 				end
 			end
-
 			local ok, err = pcall(render)
 			if not ok then
 				warn(`[RaceController] 화면 갱신 오류: {err}`)
 			end
 		end
 	end)
+end
+
+-- 지금 경주 화면인지 (월드 연출이 쓴다)
+function RaceController.isActive(): boolean
+	return phase ~= "none"
 end
 
 return RaceController

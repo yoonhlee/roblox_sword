@@ -1,438 +1,396 @@
 --!strict
 --[[
-	UIController — 강화 화면.
+	UIController — 대장간 화면 (강화의 중심, 통합 기획서 8·8-1절).
+
+	왼쪽 무대: 검 이름(누르면 이름 짓기) · 검 미리보기 자리 · 큰 레벨 숫자(쇠 달구는 색) · 피드 칸(FeedController)
+	오른쪽 조작부: 구간 안내 · 이벤트 · 확률 글자와 막대 · 방지권 토글 + "확률표" 버튼 ·
+	              비용과 지금 몇 번 가능한지 · 아래 줄 [검][기록][상점] + 큰 강화 버튼
 
 	규칙:
-	- 여기 있는 숫자는 전부 서버가 보내 준 값이다. 클라이언트가 계산하지 않는다.
-	- 요청 중에는 버튼을 잠근다(중복 입력 방지).
-	- 결과 연출은 서버 응답을 받은 뒤에만 시작한다.
+	- 숫자는 서버가 보낸 값이거나 서버와 같은 Pure/ 함수로 계산한 값이다.
+	- 확률(성공/유지/실패 %)과 비용은 항상 보인다. 방지권이 효과를 내면 바뀐 확률(실패 0)을 바로 보여 준다.
+	- 요청 중에는 버튼을 잠근다. 연출은 서버 응답을 받은 뒤에만 시작하고, 결과 숫자는 연출이 공개할 때 바뀐다.
 	- 표시 문자열은 전부 Locale 키를 거친다.
-	- 터치 영역은 44px 이상, 배율은 UIScale 로 화면 크기에 맞춘다.
+
+	이 컨트롤러는 접속 직후 상태 받기(GetState)와 데이터 복제·라이브 운영 이벤트 수신도 맡는다.
 ]]
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Locale = require(Shared:WaitForChild("Locale"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
-local Format = require(Shared:WaitForChild("Pure"):WaitForChild("Format"))
+
+local Pure = Shared:WaitForChild("Pure")
+local Format = require(Pure:WaitForChild("Format"))
+local EnhanceLogic = require(Pure:WaitForChild("EnhanceLogic"))
 
 local ConfigFolder = Shared:WaitForChild("Config")
 local Weapons = require(ConfigFolder:WaitForChild("Weapons"))
 local EnhanceTable = require(ConfigFolder:WaitForChild("EnhanceTable"))
-local EnhanceLogic = require(Shared:WaitForChild("Pure"):WaitForChild("EnhanceLogic"))
+
+local client = script.Parent.Parent
+local ClientState = require(client:WaitForChild("ClientState"))
+local ui = client:WaitForChild("ui")
+local Theme = require(ui:WaitForChild("Theme"))
+local Components = require(ui:WaitForChild("Components"))
+local ScreenManager = require(ui:WaitForChild("ScreenManager"))
+local ForgeLayout = require(ui:WaitForChild("ForgeLayout"))
 
 local controllers = script.Parent
-local ClientState = require(controllers.Parent:WaitForChild("ClientState"))
 local FeedController = require(controllers:WaitForChild("FeedController"))
 local SoundController = require(controllers:WaitForChild("SoundController"))
 local EffectsController = require(controllers:WaitForChild("EffectsController"))
-local OddsTableController = require(controllers:WaitForChild("OddsTableController"))
-local ShopController = require(controllers:WaitForChild("ShopController"))
-local SwordController = require(controllers:WaitForChild("SwordController"))
-local CollectionController = require(controllers:WaitForChild("CollectionController"))
+local HudController = require(controllers:WaitForChild("HudController"))
 
 local UIController = {}
 UIController.Name = "UIController"
 
-local COLOR_BG = Color3.fromRGB(24, 21, 26)
-local COLOR_PANEL = Color3.fromRGB(34, 30, 38)
-local COLOR_SUB = Color3.fromRGB(52, 46, 58)
-local COLOR_TEXT = Color3.fromRGB(240, 236, 230)
-local COLOR_MUTED = Color3.fromRGB(168, 160, 172)
-local COLOR_ACCENT = Color3.fromRGB(226, 142, 58)
-local COLOR_DISABLED = Color3.fromRGB(72, 68, 76)
-
-local TOUCH_MIN = 44 -- 최소 터치 영역(px)
-local NARROW_WIDTH = 700
-
-local busy = false
+local C = Theme.color
+local GAP = 6
+local ROW = {
+	title = 40,
+	info = 24,
+	odds = 26,
+	bar = 22,
+	protect = 60,
+	cost = 26,
+}
 
 local gui: ScreenGui
-local uiScale: UIScale
-local goldLabel: TextLabel
-local shardLabel: TextLabel
-local ticketLabel: TextLabel
-local centerFrame: Frame
-local weaponButton: TextButton
+local panel: Frame
+local leftColumn: Frame
+local rightColumn: Frame
+
+local nameButton: TextButton
+local rarityTag: TextLabel
+local stage: Frame
+local previewSlot: Frame
+local levelLabel: TextLabel
+local tierLabel: TextLabel
+
+local titleLabel: TextLabel
+local infoLabel: TextLabel
+local eventLabel: TextLabel
+local oddsLabel: TextLabel
+local oddsBar: Components.OddsBar
+local protectButton: TextButton
+local tableButton: TextButton
+local costLabel: TextLabel
+local bottomRow: Frame
+local swordsTile: TextButton
+local recordsTile: TextButton
+local shopTile: TextButton
+local enhanceButton: TextButton
+local tutorialBubble: Frame
+local tutorialText: TextLabel
+local skipCatcher: TextButton
+
 local renamePanel: Frame
+local renameTitle: TextLabel
 local renameBox: TextBox
 local renameConfirm: TextButton
 local renameCancel: TextButton
-local levelLabel: TextLabel
-local eventLabel: TextLabel
-local bottomPanel: Frame
-local oddsLabel: TextLabel
-local costLabel: TextLabel
-local statusLabel: TextLabel
-local bannerLabel: TextLabel
-local hintLabel: TextLabel
-local protectButton: TextButton
-local oddsTableButton: TextButton
-local swordsButton: TextButton
-local shopButton: TextButton
-local recordsButton: TextButton
-local enhanceButton: TextButton
 
 local enhanceRemote: RemoteFunction
 local renameRemote: RemoteFunction
 
-local function corner(parent: Instance, radius: number)
-	local instance = Instance.new("UICorner")
-	instance.CornerRadius = UDim.new(0, radius)
-	instance.Parent = parent
-end
+local busy = false
+-- 연출 중에는 결과가 공개되기 전 레벨을 계속 보여 준다 (복제된 데이터가 먼저 도착해도)
+local revealLevel: number? = nil
+local errorText: string? = nil
+local errorToken = 0
 
-local function makeLabel(parent: Instance, props: { [string]: any }): TextLabel
-	local label = Instance.new("TextLabel")
-	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamMedium
-	label.TextColor3 = COLOR_TEXT
-	label.TextSize = 16
-	label.Size = UDim2.new(1, 0, 0, 20)
-	label.Text = ""
-	for key, value in props do
-		(label :: any)[key] = value
+--------------------------------------------------------------------------------
+-- 만들기
+--------------------------------------------------------------------------------
+
+local function build()
+	gui = ScreenManager.createScreen("ForgeMain", 5)
+
+	panel = Components.panel(gui, { Name = "ForgePanel" })
+	Components.closeButton(panel, function()
+		SoundController.play("click")
+		ScreenManager.setForgeOpen(false)
+	end)
+
+	-- 왼쪽 무대
+	leftColumn = Components.frame(panel, { Name = "Left" })
+
+	nameButton = Instance.new("TextButton")
+	nameButton.Name = "WeaponName"
+	nameButton.BackgroundTransparency = 1
+	nameButton.AutoButtonColor = false
+	nameButton.Font = Theme.font.display
+	nameButton.TextSize = Theme.text.title
+	nameButton.TextColor3 = C.text
+	nameButton.TextXAlignment = Enum.TextXAlignment.Left
+	nameButton.TextTruncate = Enum.TextTruncate.AtEnd
+	nameButton.Size = UDim2.new(1, -96, 0, ForgeLayout.NAME_ROW)
+	nameButton.Parent = leftColumn
+	Components.stroke(nameButton, C.outline, Theme.strokeText, true)
+
+	rarityTag = Components.label(leftColumn, {
+		size = Theme.text.small,
+		font = Theme.font.bodyBold,
+		align = Enum.TextXAlignment.Center,
+		height = 26,
+	})
+	rarityTag.AnchorPoint = Vector2.new(1, 0)
+	rarityTag.Position = UDim2.new(1, 0, 0, 7)
+	rarityTag.Size = UDim2.fromOffset(88, 26)
+	rarityTag.BackgroundTransparency = 0
+	Components.corner(rarityTag, 13)
+
+	stage = Components.frame(panel, {
+		Name = "Stage",
+		BackgroundColor3 = C.bg,
+		BackgroundTransparency = 0.35,
+	})
+	Components.corner(stage, 12)
+
+	-- 3D 검 미리보기가 들어갈 자리 (월드 쪽 SwordPreview 가 채운다)
+	previewSlot = Components.frame(stage, { Name = "PreviewSlot" })
+
+	tierLabel = Components.label(stage, {
+		size = Theme.text.small,
+		font = Theme.font.bodyBold,
+		align = Enum.TextXAlignment.Center,
+		color = C.muted,
+	})
+	tierLabel.AnchorPoint = Vector2.new(0.5, 1)
+
+	levelLabel = Components.label(stage, {
+		font = Theme.font.display,
+		size = Theme.text.huge,
+		align = Enum.TextXAlignment.Center,
+		outline = true,
+	})
+	levelLabel.Name = "Level"
+	levelLabel.AnchorPoint = Vector2.new(0.5, 1)
+	levelLabel.TextTruncate = Enum.TextTruncate.None
+	local levelStroke = levelLabel:FindFirstChildOfClass("UIStroke")
+	if levelStroke then
+		levelStroke.Thickness = 4
 	end
-	label.Parent = parent
-	return label
+
+	-- 오른쪽 조작부
+	rightColumn = Components.frame(panel, { Name = "Right" })
+
+	titleLabel = Components.label(rightColumn, {
+		font = Theme.font.display,
+		size = Theme.text.title,
+		color = C.gold,
+		outline = true,
+	})
+	infoLabel = Components.label(rightColumn, { size = Theme.text.small, color = C.muted })
+	eventLabel = Components.label(rightColumn, {
+		size = Theme.text.small,
+		color = C.event,
+		font = Theme.font.bodyBold,
+		align = Enum.TextXAlignment.Right,
+	})
+	oddsLabel =
+		Components.label(rightColumn, { size = Theme.text.label, font = Theme.font.bodyBold })
+	oddsBar = Components.oddsBar(rightColumn, ROW.bar)
+
+	protectButton = Components.button(rightColumn, { style = "secondary", size = Theme.text.body })
+	tableButton = Components.button(rightColumn, { style = "secondary", size = Theme.text.body })
+	local tableIcon = Components.frame(tableButton, {
+		Size = UDim2.fromOffset(24, 24),
+		Position = UDim2.new(0, 10, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+	})
+	Components.glyph(tableIcon, "table", C.gold)
+
+	costLabel =
+		Components.label(rightColumn, { size = Theme.text.body, font = Theme.font.bodyBold })
+
+	bottomRow = Components.frame(rightColumn, { Name = "Bottom" })
+	swordsTile = Components.tile(bottomRow, "sword", "", 60)
+	recordsTile = Components.tile(bottomRow, "book", "", 60)
+	shopTile = Components.tile(bottomRow, "bag", "", 60)
+	enhanceButton = Components.button(bottomRow, { style = "primary", size = Theme.text.big })
+
+	-- 첫 강화 안내 말풍선 (강화 버튼 위)
+	tutorialBubble = Components.frame(panel, {
+		Name = "Tutorial",
+		BackgroundColor3 = C.gold,
+		BackgroundTransparency = 0,
+		Visible = false,
+		ZIndex = 8,
+	})
+	Components.corner(tutorialBubble, 10)
+	tutorialText = Components.label(tutorialBubble, {
+		size = Theme.text.small,
+		color = C.ink,
+		font = Theme.font.bodyBold,
+		align = Enum.TextXAlignment.Center,
+		wrap = true,
+	})
+	tutorialText.Size = UDim2.new(1, -12, 1, 0)
+	tutorialText.Position = UDim2.fromOffset(6, 0)
+	tutorialText.ZIndex = 9
+	local tail = Components.frame(tutorialBubble, {
+		BackgroundColor3 = C.gold,
+		BackgroundTransparency = 0,
+		Size = UDim2.fromOffset(14, 14),
+		Position = UDim2.new(0.5, 0, 1, 0),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		Rotation = 45,
+		ZIndex = 8,
+	})
+	tail.Name = "Tail"
+
+	-- 망치질 연출 중 아무 데나 누르면 건너뛴다
+	skipCatcher = Instance.new("TextButton")
+	skipCatcher.Name = "SkipCatcher"
+	skipCatcher.Text = ""
+	skipCatcher.BackgroundTransparency = 1
+	skipCatcher.AutoButtonColor = false
+	skipCatcher.Size = UDim2.fromScale(1, 1)
+	skipCatcher.ZIndex = 30
+	skipCatcher.Visible = false
+	skipCatcher.Parent = panel
+	skipCatcher.Activated:Connect(function()
+		EffectsController.skip()
+	end)
+
+	-- 이름 짓기 창
+	renamePanel = Components.panel(gui, { Name = "Rename", Visible = false, ZIndex = 40 })
+	renamePanel.AnchorPoint = Vector2.new(0.5, 0.5)
+	Components.padding(renamePanel, 16)
+	Components.list(renamePanel, "vertical", 10)
+
+	renameTitle =
+		Components.label(renamePanel, { size = Theme.text.body, color = C.muted, order = 1 })
+
+	renameBox = Instance.new("TextBox")
+	renameBox.BackgroundColor3 = C.sub
+	renameBox.BorderSizePixel = 0
+	renameBox.Font = Theme.font.bodyBold
+	renameBox.TextSize = Theme.text.label
+	renameBox.TextColor3 = C.text
+	renameBox.PlaceholderColor3 = C.muted
+	renameBox.ClearTextOnFocus = false
+	renameBox.Text = ""
+	renameBox.Size = UDim2.new(1, 0, 0, Theme.touchHeight)
+	renameBox.LayoutOrder = 2
+	renameBox.Parent = renamePanel
+	Components.corner(renameBox)
+
+	local renameRow = Components.frame(
+		renamePanel,
+		{ Size = UDim2.new(1, 0, 0, Theme.touchHeight), LayoutOrder = 3 }
+	)
+	Components.list(renameRow, "horizontal", 8)
+	renameCancel =
+		Components.button(renameRow, { style = "secondary", width = UDim.new(0.5, -4), order = 1 })
+	renameConfirm =
+		Components.button(renameRow, { style = "primary", width = UDim.new(0.5, -4), order = 2 })
 end
 
-local function makeButton(parent: Instance, props: { [string]: any }): TextButton
-	local button = Instance.new("TextButton")
-	button.BackgroundColor3 = COLOR_SUB
-	button.BorderSizePixel = 0
-	button.AutoButtonColor = true
-	button.Font = Enum.Font.GothamBold
-	button.TextColor3 = COLOR_TEXT
-	button.TextSize = 16
-	button.Text = ""
-	for key, value in props do
-		(button :: any)[key] = value
-	end
-	button.Parent = parent
-	corner(button, 10)
-	return button
-end
+--------------------------------------------------------------------------------
+-- 배치
+--------------------------------------------------------------------------------
 
--- 화면 크기에 따라 전체 UI 배율과 세로/가로 배치를 조정한다(모바일 우선).
-local function applyLayout()
-	local camera = Workspace.CurrentCamera
-	if camera == nil or uiScale == nil then
+local function place()
+	local layout = ScreenManager.getLayout()
+	if layout == nil then
 		return
 	end
 
-	local viewport = camera.ViewportSize
-	uiScale.Scale = math.clamp(math.min(viewport.X / 900, viewport.Y / 760), 0.7, 1.25)
+	local rect = layout.forgePanel
+	ScreenManager.place(panel, rect)
+	local inner = ForgeLayout.compute(rect)
 
-	local isNarrow = viewport.X < NARROW_WIDTH
-	-- 좁은 화면에서는 피드가 위쪽을 차지하므로 무기를 조금 아래로 내린다.
-	centerFrame.Position = UDim2.new(0.5, 0, if isNarrow then 0.44 else 0.36, 0)
-end
-
-local function build()
-	local player = Players.LocalPlayer
-
-	gui = Instance.new("ScreenGui")
-	gui.Name = "ForgeMain"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	gui.Parent = player:WaitForChild("PlayerGui")
-
-	uiScale = Instance.new("UIScale")
-	uiScale.Parent = gui
-
-	-- 상단 재화 바
-	local topBar = Instance.new("Frame")
-	topBar.Name = "TopBar"
-	topBar.BackgroundColor3 = COLOR_BG
-	topBar.BackgroundTransparency = 0.25
-	topBar.BorderSizePixel = 0
-	topBar.Size = UDim2.new(1, 0, 0, 48)
-	topBar.Parent = gui
-
-	local topList = Instance.new("UIListLayout")
-	topList.FillDirection = Enum.FillDirection.Horizontal
-	topList.VerticalAlignment = Enum.VerticalAlignment.Center
-	topList.Padding = UDim.new(0, 14)
-	topList.Parent = topBar
-
-	local topPadding = Instance.new("UIPadding")
-	topPadding.PaddingLeft = UDim.new(0, 16)
-	topPadding.PaddingRight = UDim.new(0, 16)
-	topPadding.Parent = topBar
-
-	goldLabel = makeLabel(topBar, {
-		Size = UDim2.new(0, 150, 1, 0),
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = COLOR_ACCENT,
-		Font = Enum.Font.GothamBold,
-		LayoutOrder = 1,
-	})
-	shardLabel = makeLabel(topBar, {
-		Size = UDim2.new(0, 120, 1, 0),
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = COLOR_MUTED,
-		LayoutOrder = 2,
-	})
-	ticketLabel = makeLabel(topBar, {
-		Size = UDim2.new(0, 150, 1, 0),
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextColor3 = COLOR_MUTED,
-		LayoutOrder = 3,
-	})
-
-	-- 공지 / 점검 배너 (내용이 있을 때만 보인다)
-	bannerLabel = makeLabel(gui, {
-		BackgroundColor3 = Color3.fromRGB(64, 48, 24),
-		BackgroundTransparency = 0.15,
-		Size = UDim2.new(1, -24, 0, 30),
-		Position = UDim2.new(0.5, 0, 0, 56),
-		AnchorPoint = Vector2.new(0.5, 0),
-		TextSize = 14,
-		TextWrapped = true,
-		Visible = false,
-	})
-	corner(bannerLabel, 8)
-
-	-- 중앙: 무기와 강화 레벨
-	centerFrame = Instance.new("Frame")
-	centerFrame.Name = "Center"
-	centerFrame.BackgroundTransparency = 1
-	centerFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-	centerFrame.Position = UDim2.new(0.5, 0, 0.36, 0)
-	centerFrame.Size = UDim2.new(0.9, 0, 0, 170)
-	centerFrame.Parent = gui
-
-	local centerList = Instance.new("UIListLayout")
-	centerList.FillDirection = Enum.FillDirection.Vertical
-	centerList.SortOrder = Enum.SortOrder.LayoutOrder
-	centerList.HorizontalAlignment = Enum.HorizontalAlignment.Center
-	centerList.VerticalAlignment = Enum.VerticalAlignment.Center
-	centerList.Padding = UDim.new(0, 4)
-	centerList.Parent = centerFrame
-
-	-- 무기 이름은 눌러서 바꿀 수 있다.
-	weaponButton = makeButton(centerFrame, {
-		Size = UDim2.new(1, 0, 0, TOUCH_MIN),
-		BackgroundTransparency = 1,
-		AutoButtonColor = false,
-		Font = Enum.Font.GothamMedium,
-		TextSize = 22,
-		TextColor3 = COLOR_MUTED,
-		LayoutOrder = 1,
-	})
-	levelLabel = makeLabel(centerFrame, {
-		Size = UDim2.new(1, 0, 0, 90),
-		TextSize = 72,
-		Font = Enum.Font.GothamBold,
-		TextColor3 = COLOR_ACCENT,
-		LayoutOrder = 2,
-	})
-	eventLabel = makeLabel(centerFrame, {
-		Size = UDim2.new(1, 0, 0, 20),
-		TextSize = 15,
-		TextColor3 = Color3.fromRGB(140, 210, 255),
-		LayoutOrder = 3,
-		Visible = false,
-	})
-
-	-- 하단 조작 패널
-	bottomPanel = Instance.new("Frame")
-	bottomPanel.Name = "Bottom"
-	bottomPanel.BackgroundColor3 = COLOR_PANEL
-	bottomPanel.BackgroundTransparency = 0.1
-	bottomPanel.BorderSizePixel = 0
-	bottomPanel.AnchorPoint = Vector2.new(0.5, 1)
-	bottomPanel.Position = UDim2.new(0.5, 0, 1, -12)
-	bottomPanel.Size = UDim2.new(1, -24, 0, 292)
-	bottomPanel.Parent = gui
-	corner(bottomPanel, 14)
-
-	local bottomSize = Instance.new("UISizeConstraint")
-	bottomSize.MaxSize = Vector2.new(560, math.huge)
-	bottomSize.Parent = bottomPanel
-
-	local bottomPadding = Instance.new("UIPadding")
-	bottomPadding.PaddingTop = UDim.new(0, 12)
-	bottomPadding.PaddingBottom = UDim.new(0, 12)
-	bottomPadding.PaddingLeft = UDim.new(0, 14)
-	bottomPadding.PaddingRight = UDim.new(0, 14)
-	bottomPadding.Parent = bottomPanel
-
-	local bottomList = Instance.new("UIListLayout")
-	bottomList.FillDirection = Enum.FillDirection.Vertical
-	bottomList.SortOrder = Enum.SortOrder.LayoutOrder
-	bottomList.Padding = UDim.new(0, 6)
-	bottomList.Parent = bottomPanel
-
-	oddsLabel = makeLabel(bottomPanel, {
-		Size = UDim2.new(1, 0, 0, 22),
-		TextSize = 17,
-		LayoutOrder = 1,
-	})
-	costLabel = makeLabel(bottomPanel, {
-		Size = UDim2.new(1, 0, 0, 20),
-		TextSize = 15,
-		TextColor3 = COLOR_MUTED,
-		LayoutOrder = 2,
-	})
-	protectButton = makeButton(bottomPanel, {
-		Size = UDim2.new(1, 0, 0, TOUCH_MIN),
-		Font = Enum.Font.GothamMedium,
-		LayoutOrder = 3,
-	})
-
-	-- 보조 버튼 한 줄 (확률표 / 검 / 기록 / 상점)
-	local actionRow = Instance.new("Frame")
-	actionRow.BackgroundTransparency = 1
-	actionRow.Size = UDim2.new(1, 0, 0, TOUCH_MIN)
-	actionRow.LayoutOrder = 4
-	actionRow.Parent = bottomPanel
-
-	local actionList = Instance.new("UIListLayout")
-	actionList.FillDirection = Enum.FillDirection.Horizontal
-	actionList.SortOrder = Enum.SortOrder.LayoutOrder
-	actionList.Padding = UDim.new(0, 8)
-	actionList.Parent = actionRow
-
-	oddsTableButton = makeButton(actionRow, {
-		Size = UDim2.new(0.25, -6, 1, 0),
-		TextSize = 15,
-		Font = Enum.Font.GothamMedium,
-		LayoutOrder = 1,
-	})
-	swordsButton = makeButton(actionRow, {
-		Size = UDim2.new(0.25, -6, 1, 0),
-		TextSize = 15,
-		Font = Enum.Font.GothamMedium,
-		LayoutOrder = 2,
-	})
-	recordsButton = makeButton(actionRow, {
-		Size = UDim2.new(0.25, -6, 1, 0),
-		TextSize = 15,
-		Font = Enum.Font.GothamMedium,
-		LayoutOrder = 3,
-	})
-	shopButton = makeButton(actionRow, {
-		Size = UDim2.new(0.25, -6, 1, 0),
-		TextSize = 15,
-		Font = Enum.Font.GothamMedium,
-		LayoutOrder = 4,
-	})
-
-	enhanceButton = makeButton(bottomPanel, {
-		Size = UDim2.new(1, 0, 0, 64),
-		BackgroundColor3 = COLOR_ACCENT,
-		TextColor3 = Color3.fromRGB(24, 18, 10),
-		TextSize = 24,
-		LayoutOrder = 5,
-	})
-	statusLabel = makeLabel(bottomPanel, {
-		Size = UDim2.new(1, 0, 0, 18),
-		TextSize = 14,
-		TextColor3 = Color3.fromRGB(255, 140, 130),
-		LayoutOrder = 6,
-	})
-
-	-- 튜토리얼 안내. 첫 3회 강화까지만 보인다.
-	hintLabel = makeLabel(bottomPanel, {
-		Size = UDim2.new(1, 0, 0, 18),
-		TextSize = 14,
-		TextColor3 = COLOR_ACCENT,
-		LayoutOrder = 0,
-		Visible = false,
-	})
-
-	-- 이름 짓기 창
-	renamePanel = Instance.new("Frame")
-	renamePanel.Name = "Rename"
-	renamePanel.BackgroundColor3 = COLOR_PANEL
-	renamePanel.BorderSizePixel = 0
-	renamePanel.AnchorPoint = Vector2.new(0.5, 0.5)
-	renamePanel.Position = UDim2.fromScale(0.5, 0.5)
-	renamePanel.Size = UDim2.new(0.86, 0, 0, 210)
-	renamePanel.Visible = false
-	renamePanel.ZIndex = 30
-	renamePanel.Parent = gui
-	corner(renamePanel, 14)
-
-	local renameSize = Instance.new("UISizeConstraint")
-	renameSize.MaxSize = Vector2.new(420, math.huge)
-	renameSize.Parent = renamePanel
-
-	local renamePadding = Instance.new("UIPadding")
-	renamePadding.PaddingTop = UDim.new(0, 16)
-	renamePadding.PaddingBottom = UDim.new(0, 16)
-	renamePadding.PaddingLeft = UDim.new(0, 16)
-	renamePadding.PaddingRight = UDim.new(0, 16)
-	renamePadding.Parent = renamePanel
-
-	local renameList = Instance.new("UIListLayout")
-	renameList.FillDirection = Enum.FillDirection.Vertical
-	renameList.SortOrder = Enum.SortOrder.LayoutOrder
-	renameList.Padding = UDim.new(0, 10)
-	renameList.Parent = renamePanel
-
-	local renamePromptLabel = makeLabel(renamePanel, {
-		Size = UDim2.new(1, 0, 0, 22),
-		TextSize = 15,
-		TextColor3 = COLOR_MUTED,
-		ZIndex = 31,
-		LayoutOrder = 1,
-	})
-	renamePromptLabel.Name = "Prompt"
-
-	renameBox = Instance.new("TextBox")
-	renameBox.BackgroundColor3 = COLOR_SUB
-	renameBox.BorderSizePixel = 0
-	renameBox.Font = Enum.Font.GothamMedium
-	renameBox.TextSize = 18
-	renameBox.TextColor3 = COLOR_TEXT
-	renameBox.PlaceholderColor3 = COLOR_DISABLED
-	renameBox.ClearTextOnFocus = false
-	renameBox.Text = ""
-	renameBox.Size = UDim2.new(1, 0, 0, TOUCH_MIN)
-	renameBox.ZIndex = 31
-	renameBox.LayoutOrder = 2
-	renameBox.Parent = renamePanel
-	corner(renameBox, 10)
-
-	renameConfirm = makeButton(renamePanel, {
-		Size = UDim2.new(1, 0, 0, TOUCH_MIN),
-		BackgroundColor3 = COLOR_ACCENT,
-		TextColor3 = Color3.fromRGB(24, 18, 10),
-		ZIndex = 31,
-		LayoutOrder = 3,
-	})
-	renameCancel = makeButton(renamePanel, {
-		Size = UDim2.new(1, 0, 0, TOUCH_MIN),
-		ZIndex = 31,
-		LayoutOrder = 4,
-	})
-
-	EffectsController.bind(gui, centerFrame, levelLabel)
-
-	applyLayout()
-	local camera = Workspace.CurrentCamera
-	if camera then
-		camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyLayout)
+	local function put(object: GuiObject, x: number, y: number, w: number, h: number)
+		object.Position = UDim2.fromOffset(x, y)
+		object.Size = UDim2.fromOffset(w, h)
 	end
+
+	put(leftColumn, inner.left.x, inner.left.y, inner.left.w, ForgeLayout.NAME_ROW)
+	put(stage, inner.stage.x, inner.stage.y, inner.stage.w, inner.stage.h)
+
+	local stageH = inner.stage.h
+	levelLabel.Size = UDim2.new(1, 0, 0, math.min(110, stageH * 0.55))
+	levelLabel.Position = UDim2.new(0.5, 0, 1, -24)
+	tierLabel.Size = UDim2.new(1, 0, 0, 22)
+	tierLabel.Position = UDim2.new(0.5, 0, 1, -4)
+	previewSlot.Size = UDim2.new(1, 0, 1, 0)
+
+	-- 오른쪽 줄 높이 계산: 고정 줄을 위에서부터 쌓고 남는 높이를 아래 줄(강화 버튼)에
+	local right = inner.right
+	put(rightColumn, right.x, right.y, right.w, right.h)
+
+	local fixed = ROW.title + ROW.info + ROW.odds + ROW.bar + ROW.protect + ROW.cost + GAP * 6
+	local bottomH = math.clamp(right.h - fixed, 64, 96)
+
+	local y = 0
+	titleLabel.Position = UDim2.fromOffset(0, y)
+	titleLabel.Size = UDim2.new(1, -56, 0, ROW.title) -- 오른쪽 위 X 자리 비움
+	y += ROW.title + GAP
+
+	infoLabel.Position = UDim2.fromOffset(0, y)
+	infoLabel.Size = UDim2.new(0.55, 0, 0, ROW.info)
+	eventLabel.Position = UDim2.new(0.55, 0, 0, y)
+	eventLabel.Size = UDim2.new(0.45, 0, 0, ROW.info)
+	y += ROW.info + GAP
+
+	oddsLabel.Position = UDim2.fromOffset(0, y)
+	oddsLabel.Size = UDim2.new(1, 0, 0, ROW.odds)
+	y += ROW.odds + GAP
+
+	oddsBar.frame.Position = UDim2.fromOffset(0, y)
+	oddsBar.frame.Size = UDim2.new(1, 0, 0, ROW.bar)
+	y += ROW.bar + GAP
+
+	local tableWidth = math.min(150, math.floor(right.w * 0.36))
+	protectButton.Position = UDim2.fromOffset(0, y)
+	protectButton.Size = UDim2.new(1, -(tableWidth + 8), 0, ROW.protect)
+	tableButton.Position = UDim2.new(1, -tableWidth, 0, y)
+	tableButton.Size = UDim2.fromOffset(tableWidth, ROW.protect)
+	y += ROW.protect + GAP
+
+	costLabel.Position = UDim2.fromOffset(0, y)
+	costLabel.Size = UDim2.new(1, 0, 0, ROW.cost)
+
+	-- 아래 줄: 오른쪽 맨 아래에 붙인다
+	bottomRow.Position = UDim2.new(0, 0, 1, -bottomH)
+	bottomRow.Size = UDim2.new(1, 0, 0, bottomH)
+	local tileSize = math.min(bottomH, 72)
+	for index, tile in { swordsTile, recordsTile, shopTile } do
+		tile.Size = UDim2.fromOffset(tileSize, tileSize)
+		tile.Position = UDim2.new(0, (index - 1) * (tileSize + 6), 1, -tileSize)
+	end
+	local enhanceLeft = 3 * (tileSize + 6)
+	enhanceButton.Position = UDim2.fromOffset(enhanceLeft, 0)
+	enhanceButton.Size = UDim2.new(1, -enhanceLeft, 1, 0)
+
+	-- 안내 말풍선: 강화 버튼 바로 위
+	local bubbleW = math.min(280, right.w - enhanceLeft)
+	tutorialBubble.Size = UDim2.fromOffset(bubbleW, 44)
+	tutorialBubble.Position = UDim2.fromOffset(
+		right.x + enhanceLeft + (right.w - enhanceLeft - bubbleW) / 2,
+		right.y + right.h - bottomH - 44 - 10
+	)
+
+	renamePanel.Position = UDim2.fromOffset(rect.x + rect.w / 2, rect.y + rect.h / 2)
+	renamePanel.Size =
+		UDim2.fromOffset(math.min(440, rect.w - 40), 16 * 2 + 28 + 10 + Theme.touchHeight * 2 + 10)
 end
 
--- 착용 검의 이름 (지어 준 이름이 있으면 그것)
+--------------------------------------------------------------------------------
+-- 그리기
+--------------------------------------------------------------------------------
+
 local function weaponDisplayName(language: string, sword: any): string
 	if sword == nil then
 		return ""
 	end
-
 	if sword.customName and sword.customName ~= "" then
 		return sword.customName
 	end
-
 	local info = Weapons.get(sword.id)
 	return if info then Locale.get(language, info.nameKey) else sword.id
 end
@@ -440,76 +398,67 @@ end
 local function render()
 	local language = ClientState.getLanguage()
 	local data = ClientState.getData()
+	local mode = ScreenManager.getMode()
 
-	-- 경주 중에는 화면 전체를, 대장간을 접었을 때는 무기와 조작 패널만 숨긴다(재화 바는 남긴다).
-	gui.Enabled = not ClientState.isInRace()
-	local forgeOpen = ClientState.isForgeOpen()
-	centerFrame.Visible = forgeOpen
-	bottomPanel.Visible = forgeOpen
-	if not forgeOpen then
-		renamePanel.Visible = false
-	end
+	gui.Enabled = mode == "forge"
 
-	oddsTableButton.Text = Locale.get(language, "ui.oddsTable")
-	swordsButton.Text = Locale.get(language, "ui.swords")
-	shopButton.Text = Locale.get(language, "ui.shop")
-	recordsButton.Text = Locale.get(language, "ui.records")
+	titleLabel.Text = Locale.get(language, "ui.forgeTitle")
+	tableButton.Text = "      " .. Locale.get(language, "ui.oddsTable")
+	Components.setTileText(swordsTile, Locale.get(language, "ui.swords"))
+	Components.setTileText(recordsTile, Locale.get(language, "ui.records"))
+	Components.setTileText(shopTile, Locale.get(language, "ui.shop"))
+	renameTitle.Text = Locale.get(language, "ui.renamePrompt")
 	renameConfirm.Text = Locale.get(language, "ui.rename")
 	renameCancel.Text = Locale.get(language, "ui.cancel")
-
-	local prompt = renamePanel:FindFirstChild("Prompt")
-	if prompt and prompt:IsA("TextLabel") then
-		prompt.Text = Locale.get(language, "ui.renamePrompt")
-	end
+	FeedController.setBannerCheck(HudController.isBannerVisible)
 
 	if data == nil then
 		enhanceButton.Text = Locale.get(language, "ui.loading")
-		enhanceButton.BackgroundColor3 = COLOR_DISABLED
-		enhanceButton.Active = false
+		Components.setEnabled(enhanceButton, false)
 		return
 	end
 
-	-- 공지/점검 배너
-	local liveOps = ClientState.getLiveOps()
-	if liveOps.maintenance then
-		bannerLabel.Visible = true
-		bannerLabel.Text = Locale.get(language, "ui.maintenance")
-	elseif liveOps.notice ~= "" then
-		bannerLabel.Visible = true
-		bannerLabel.Text = liveOps.notice
+	local sword = ClientState.getEquipped()
+	local level = revealLevel or (if sword then sword.level else 0)
+	local info = if sword then Weapons.get(sword.id) else nil
+
+	nameButton.Text = weaponDisplayName(language, sword)
+	if info then
+		rarityTag.Text = Locale.get(language, `rarity.{info.rarity}`)
+		rarityTag.BackgroundColor3 = Theme.rarityColor(info.rarity)
+		rarityTag.TextColor3 = C.ink
+		rarityTag.Visible = true
 	else
-		bannerLabel.Visible = false
+		rarityTag.Visible = false
 	end
 
-	-- 첫 1분 안에 강화를 세 번 경험하게 하는 안내
+	levelLabel.Text = Format.level(level)
+	levelLabel.TextColor3 = Theme.heatColor(level)
+	tierLabel.Text = Locale.get(language, Theme.heatTier(level).nameKey)
+	tierLabel.TextColor3 = Theme.heatColor(level)
+
+	-- 첫 강화 3번 안내
 	local tries = data.stats.enhanceTries
 	if tries < 3 then
-		hintLabel.Visible = true
-		hintLabel.Text = Locale.get(language, `tutorial.step{tries + 1}`)
-	elseif tries == 3 then
-		hintLabel.Visible = true
-		hintLabel.Text = Locale.get(language, "tutorial.done")
+		tutorialBubble.Visible = true
+		tutorialText.Text = Locale.get(language, `tutorial.step{tries + 1}`)
 	else
-		hintLabel.Visible = false
+		tutorialBubble.Visible = false
 	end
 
-	goldLabel.Text = Locale.get(language, "ui.gold", Format.comma(data.gold))
-	shardLabel.Text = Locale.get(language, "ui.shards", Format.comma(data.shards))
-	ticketLabel.Text = Locale.get(language, "ui.tickets", data.protectTickets)
-
-	local sword = ClientState.getEquipped()
-	local useProtect = ClientState.getUseProtect()
-
-	weaponButton.Text = weaponDisplayName(language, sword)
-	levelLabel.Text = Locale.get(language, "ui.level", if sword then sword.level else 0)
-
-	protectButton.Text = `{if useProtect then "[v]" else "[ ]"} {Locale.get(
-		language,
-		"ui.useProtect"
-	)} ({data.protectTickets})`
-	protectButton.TextColor3 = if useProtect then COLOR_ACCENT else COLOR_MUTED
-
+	-- 확률 (연출 중이면 공개 전 확률을 계속 보여 준다: setOdds 를 공개 때 부른다)
 	local odds = ClientState.getOdds()
+	local useProtect = ClientState.getUseProtect()
+	local inSecondZone = level >= EnhanceTable.SAFE_LEVEL
+
+	protectButton.Text = Locale.get(
+		language,
+		if inSecondZone then "ui.protectToggle" else "ui.protectIdle",
+		Locale.get(language, if useProtect then "ui.on" else "ui.off"),
+		data.protectTickets
+	)
+	Components.setStyle(protectButton, if useProtect then "primary" else "secondary")
+
 	if odds == nil then
 		oddsLabel.Text = ""
 		costLabel.Text = ""
@@ -524,14 +473,16 @@ local function render()
 	end
 
 	if odds.cost <= 0 then
-		-- 최대 레벨
+		infoLabel.Text = Locale.get(language, "ui.zoneMax")
 		oddsLabel.Text = Locale.get(language, "ui.maxLevel")
+		oddsBar.set(1, 0, 0)
 		costLabel.Text = ""
-		enhanceButton.Text = Locale.get(language, "ui.maxLevel")
-		enhanceButton.BackgroundColor3 = COLOR_DISABLED
-		enhanceButton.Active = false
+		enhanceButton.Text = Locale.get(language, "ui.maxShort")
+		Components.setEnabled(enhanceButton, false)
 		return
 	end
+
+	infoLabel.Text = Locale.get(language, if inSecondZone then "ui.zone2" else "ui.zone1")
 
 	-- 방지권이 효과를 내는 동안에는 바뀐 확률(실패 0, 그만큼 유지)을 보여 준다.
 	local shown: EnhanceLogic.Odds = odds
@@ -546,23 +497,46 @@ local function render()
 		Format.percent(shown.keep),
 		Format.percent(shown.fail)
 	)
-	costLabel.Text = Locale.get(language, "ui.cost", Format.comma(odds.cost))
+	oddsBar.set(shown.success, shown.keep, shown.fail)
+
+	local times = math.floor(data.gold / odds.cost)
+	if errorText then
+		costLabel.Text = errorText
+		costLabel.TextColor3 = C.fail
+	elseif times <= 0 then
+		costLabel.Text = Locale.get(language, "ui.costShort", Format.comma(odds.cost))
+		costLabel.TextColor3 = C.fail
+	else
+		costLabel.Text =
+			Locale.get(language, "ui.costTimes", Format.comma(odds.cost), Format.comma(times))
+		costLabel.TextColor3 = C.text
+	end
 
 	if busy then
 		enhanceButton.Text = Locale.get(language, "ui.enhancing")
-		enhanceButton.BackgroundColor3 = COLOR_DISABLED
-		enhanceButton.Active = false
+		Components.setEnabled(enhanceButton, false)
 	else
-		local affordable = data.gold >= odds.cost
 		enhanceButton.Text = Locale.get(language, "ui.enhance")
-		enhanceButton.BackgroundColor3 = if affordable then COLOR_ACCENT else COLOR_DISABLED
-		enhanceButton.Active = affordable
+		Components.setEnabled(enhanceButton, times > 0)
 	end
 end
 
 local function showError(reason: string)
-	statusLabel.Text = Locale.get(ClientState.getLanguage(), `error.{reason}`)
+	errorText = Locale.get(ClientState.getLanguage(), `error.{reason}`)
+	errorToken += 1
+	local token = errorToken
+	render()
+	task.delay(3, function()
+		if token == errorToken then
+			errorText = nil
+			render()
+		end
+	end)
 end
+
+--------------------------------------------------------------------------------
+-- 요청
+--------------------------------------------------------------------------------
 
 local function requestEnhance()
 	if busy then
@@ -570,46 +544,50 @@ local function requestEnhance()
 	end
 
 	local odds = ClientState.getOdds()
-	local data = ClientState.getData()
-	if odds == nil or data == nil or odds.cost <= 0 then
+	local sword = ClientState.getEquipped()
+	if odds == nil or sword == nil or odds.cost <= 0 then
 		return
 	end
 
+	local startLevel = sword.level
 	busy = true
-	statusLabel.Text = ""
+	revealLevel = startLevel
+	errorText = nil
 	render()
 
 	local ok, response = pcall(function()
 		return enhanceRemote:InvokeServer(ClientState.getUseProtect())
 	end)
 
-	busy = false
-
-	if not ok or type(response) ~= "table" then
-		showError("unknown")
-		render()
+	if not ok or type(response) ~= "table" or response.ok ~= true then
+		busy = false
+		revealLevel = nil
+		showError(if ok and type(response) == "table" then tostring(response.reason) else "unknown")
 		return
 	end
 
-	if response.ok ~= true then
-		showError(tostring(response.reason))
+	-- 서버 응답을 받은 뒤에만 연출을 시작한다. 결과는 연출이 "공개"할 때 화면에 반영한다.
+	local outcome = tostring(response.result)
+	local newLevel = tonumber(response.newLevel) or startLevel
+	local isMax = outcome == "success" and newLevel >= EnhanceTable.MAX_LEVEL
+	local pendingOdds = response.odds
+
+	skipCatcher.Visible = true
+	EffectsController.playReveal(startLevel, outcome, newLevel, isMax, function()
+		revealLevel = nil
+		if type(pendingOdds) == "table" then
+			ClientState.setOdds(pendingOdds)
+		end
+		FeedController.pushOutcome(outcome)
+		if isMax then
+			FeedController.pushOutcome("max")
+		end
 		render()
-		return
-	end
-
-	-- 서버 응답을 받은 뒤에만 연출을 시작한다.
-	ClientState.setOdds(response.odds)
-	FeedController.pushOutcome(response.result)
-	SoundController.play(response.result)
-
-	if response.result == "success" and response.newLevel >= EnhanceTable.MAX_LEVEL then
-		FeedController.pushOutcome("max")
-		EffectsController.playMaxLevel()
-	else
-		EffectsController.play(response.result)
-	end
-
-	render()
+	end, function()
+		skipCatcher.Visible = false
+		busy = false
+		render()
+	end)
 end
 
 local function requestRename()
@@ -628,7 +606,6 @@ local function requestRename()
 		showError("unknown")
 		return
 	end
-
 	if response.ok ~= true then
 		showError(tostring(response.reason))
 		return
@@ -637,10 +614,12 @@ local function requestRename()
 	-- 서버가 돌려준 "필터링을 통과한" 이름만 화면에 쓴다.
 	FeedController.pushRaw(
 		Locale.get(ClientState.getLanguage(), "ui.renamed", response.name),
-		COLOR_ACCENT
+		C.ember
 	)
 	render()
 end
+
+--------------------------------------------------------------------------------
 
 function UIController.Init()
 	build()
@@ -663,10 +642,14 @@ function UIController.Init()
 		end
 	end)
 
+	ScreenManager.onLayout(place)
+	ScreenManager.onStateChanged(render)
 	ClientState.onChanged(render)
 
 	enhanceButton.Activated:Connect(function()
-		task.spawn(requestEnhance)
+		if enhanceButton.Active then
+			task.spawn(requestEnhance)
+		end
 	end)
 
 	protectButton.Activated:Connect(function()
@@ -674,42 +657,46 @@ function UIController.Init()
 		ClientState.setUseProtect(not ClientState.getUseProtect())
 	end)
 
-	swordsButton.Activated:Connect(function()
-		SwordController.toggle()
+	tableButton.Activated:Connect(function()
+		SoundController.play("click")
+		ScreenManager.openModal("odds")
+	end)
+	swordsTile.Activated:Connect(function()
+		SoundController.play("click")
+		ScreenManager.openModal("swords")
+	end)
+	recordsTile.Activated:Connect(function()
+		SoundController.play("click")
+		ScreenManager.openModal("records")
+	end)
+	shopTile.Activated:Connect(function()
+		SoundController.play("click")
+		ScreenManager.openModal("shop")
 	end)
 
-	oddsTableButton.Activated:Connect(function()
-		OddsTableController.toggle()
-	end)
-
-	shopButton.Activated:Connect(function()
-		ShopController.toggle()
-	end)
-
-	recordsButton.Activated:Connect(function()
-		CollectionController.toggle()
-	end)
-
-	weaponButton.Activated:Connect(function()
+	nameButton.Activated:Connect(function()
 		local sword = ClientState.getEquipped()
 		renameBox.Text = if sword and sword.customName then sword.customName else ""
 		renamePanel.Visible = true
 	end)
-
 	renameConfirm.Activated:Connect(function()
 		task.spawn(requestRename)
 	end)
-
 	renameCancel.Activated:Connect(function()
 		renamePanel.Visible = false
 	end)
 
+	EffectsController.bind(stage, levelLabel)
 	render()
 end
 
+-- 3D 검 미리보기를 넣을 자리 (월드 쪽 컨트롤러가 쓴다)
+function UIController.getPreviewSlot(): Frame
+	return previewSlot
+end
+
 function UIController.Start()
-	-- 접속 직후 현재 상태를 한 번 받아 온다.
-	-- (프로필 로드가 아직 끝나지 않았을 수 있어 잠시 재시도한다)
+	-- 접속 직후 현재 상태를 한 번 받아 온다 (프로필 로드가 아직 끝나지 않았을 수 있어 잠시 재시도).
 	task.spawn(function()
 		local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
 		local stateRemote = remotesFolder:WaitForChild(Remotes.Functions.GetState) :: RemoteFunction

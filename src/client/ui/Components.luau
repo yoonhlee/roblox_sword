@@ -364,6 +364,51 @@ function Components.glyph(parent: Instance, kind: Glyph, color: Color3?): Frame
 	return holder
 end
 
+--[[
+	메뉴 타일: 정사각형 버튼 안에 도형 아이콘 + 짧은 이름. 로비 왼쪽 메뉴와 대장간 아래 줄에 쓴다.
+	size 는 한 변(디자인 칸). 글자는 가장 작은 단계(17)라 60칸 타일에 들어간다.
+]]
+function Components.tile(
+	parent: Instance,
+	glyph: Glyph,
+	text: string,
+	size: number,
+	order: number?
+): TextButton
+	local button = Components.button(parent, { style = "secondary", order = order, height = size })
+	button.Size = UDim2.fromOffset(size, size)
+	button.Text = ""
+
+	local icon = Components.frame(button, {
+		Size = UDim2.new(0.56, 0, 0.56, 0),
+		Position = UDim2.new(0.5, 0, 0, 3),
+		AnchorPoint = Vector2.new(0.5, 0),
+	})
+	Components.glyph(icon, glyph, C.gold)
+	Components.iconImage(icon, nil)
+
+	local caption = Components.label(button, {
+		text = text,
+		size = Theme.text.small,
+		font = Theme.font.bodyBold,
+		align = Enum.TextXAlignment.Center,
+	})
+	caption.Name = "Caption"
+	caption.AnchorPoint = Vector2.new(0, 1)
+	caption.Position = UDim2.new(0, 0, 1, -2)
+	caption.Size = UDim2.new(1, 0, 0, 20)
+
+	return button
+end
+
+-- 타일 이름 바꾸기 (언어 변경)
+function Components.setTileText(button: TextButton, text: string)
+	local caption = button:FindFirstChild("Caption")
+	if caption and caption:IsA("TextLabel") then
+		caption.Text = text
+	end
+end
+
 -- 나중에 이미지 아이콘을 넣을 자리. assetId 가 비어 있으면 숨겨지고 도형 아이콘이 보인다.
 function Components.iconImage(parent: Instance, assetId: string?): ImageLabel
 	local image = Instance.new("ImageLabel")

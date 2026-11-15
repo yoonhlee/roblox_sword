@@ -1,12 +1,12 @@
 --!strict
 --[[
-	CollectionController — 도감 / 랭킹 / 설정을 탭 하나로 묶은 화면.
+	CollectionController — 기록 창: 도감 / 랭킹 / 설정 탭 (통합 기획서 5-5·8절).
 
-	세 화면을 따로 만들면 코드가 세 배가 되고 모바일에서 버튼도 자리를 잃는다.
-	한 패널 안에서 탭으로 바꾸는 편이 화면도 코드도 단순하다.
-
-	랭킹은 지금 "최고 강화" 하나뿐이다. 배틀 레이팅 순위는 1:1 배틀과 함께 없앴고,
-	그 자리를 채울 순위는 아직 정해지지 않았다(통합 기획서 9절 D7).
+	도감: 20칸 격자(검 1종 = 1칸). 가진 검은 이름·등급 색 테두리·역대 최고 레벨(레벨 색)·
+	      5/10/15/20강 기념 점 4개. 아직 없는 검은 어두운 "?" 칸, 아직 만들지 않은 칸은 "준비 중".
+	랭킹: 최고 강화 상위 목록 (배틀 레이팅 순위는 폐지, 대체는 D7 미정).
+	설정: 소리, 언어.
+	도감은 서버에 따로 묻지 않고 복제받은 데이터(swords, codex)로 그린다.
 ]]
 
 local Players = game:GetService("Players")
@@ -18,143 +18,235 @@ local Remotes = require(Shared:WaitForChild("Remotes"))
 local Format = require(Shared:WaitForChild("Pure"):WaitForChild("Format"))
 local Weapons = require(Shared:WaitForChild("Config"):WaitForChild("Weapons"))
 
-local ClientState = require(script.Parent.Parent:WaitForChild("ClientState"))
+local client = script.Parent.Parent
+local ClientState = require(client:WaitForChild("ClientState"))
+local ui = client:WaitForChild("ui")
+local Theme = require(ui:WaitForChild("Theme"))
+local Components = require(ui:WaitForChild("Components"))
+local ScreenManager = require(ui:WaitForChild("ScreenManager"))
 
 local CollectionController = {}
 CollectionController.Name = "CollectionController"
 
-local COLOR_PANEL = Color3.fromRGB(34, 30, 38)
-local COLOR_ROW = Color3.fromRGB(44, 39, 50)
-local COLOR_TEXT = Color3.fromRGB(240, 236, 230)
-local COLOR_MUTED = Color3.fromRGB(120, 114, 126)
-local COLOR_ACCENT = Color3.fromRGB(226, 142, 58)
-
-local TOUCH_MIN = 44
+local C = Theme.color
+local CODEX_SLOTS = 20 -- 기본 검 20종 (지금 정의된 검이 적으면 나머지는 "준비 중")
+local RANK_KIND = "level"
 
 type Tab = "codex" | "rank" | "settings"
 
-local TABS: { Tab } = { "codex", "rank", "settings" }
-
 local gui: ScreenGui
 local panel: Frame
-local scroller: ScrollingFrame
-local tabButtons: { [string]: TextButton } = {}
-local rankTitle: TextLabel
-local closeButton: TextButton
+local tabs: Components.Tabs
+local content: Frame
+local open = false
+local activeTab: Tab = "codex"
 
 local boardRemote: RemoteFunction
 local settingRemote: RemoteFunction
-local settingsRow: Frame
-local sfxButton: TextButton
-local languageButton: TextButton
 
-local activeTab: Tab = "codex"
+local function codexCell(
+	parent: Instance,
+	language: string,
+	weaponId: string?,
+	data: any,
+	order: number
+)
+	local info = if weaponId then Weapons.get(weaponId) else nil
+	local sword = if weaponId and data then data.swords[weaponId] else nil
 
--- 서버에 요청하는 순위 종류. 지금은 최고 강화 레벨 하나뿐이다.
-local RANK_KIND = "level"
+	local cell = Components.frame(parent, {
+		BackgroundColor3 = if sword then C.sub else C.bg,
+		BackgroundTransparency = if sword then 0.1 else 0.3,
+		LayoutOrder = order,
+	})
+	Components.corner(cell, 10)
 
-local function makeRow(text: string, color: Color3, order: number)
-	local label = Instance.new("TextLabel")
-	label.BackgroundColor3 = COLOR_ROW
-	label.BackgroundTransparency = 0.4
-	label.BorderSizePixel = 0
-	label.Font = Enum.Font.GothamMedium
-	label.TextSize = 14
-	label.TextColor3 = color
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Size = UDim2.new(1, 0, 0, 26)
-	label.Text = "  " .. text
-	label.LayoutOrder = order
-	label.Parent = scroller
+	if info == nil then
+		-- 아직 만들지 않은 검 칸 (D22)
+		Components.stroke(cell, C.line, 1)
+		local soon = Components.label(cell, {
+			text = Locale.get(language, "ui.codexSoon"),
+			size = Theme.text.small,
+			color = C.disabled,
+			align = Enum.TextXAlignment.Center,
+		})
+		soon.Size = UDim2.fromScale(1, 1)
+		return
+	end
 
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 6)
-	corner.Parent = label
-end
+	local rarityColor = Theme.rarityColor(info.rarity)
+	Components.stroke(cell, if sword then rarityColor else Theme.shade(rarityColor, -0.6), 2)
 
-local function clearRows()
-	for _, child in scroller:GetChildren() do
-		if child:IsA("TextLabel") then
-			child:Destroy()
-		end
+	if sword == nil then
+		local mark = Components.label(cell, {
+			text = "?",
+			font = Theme.font.display,
+			size = Theme.text.big,
+			color = Theme.shade(rarityColor, -0.4),
+			align = Enum.TextXAlignment.Center,
+		})
+		mark.Size = UDim2.new(1, 0, 0.62, 0)
+		local rarity = Components.label(cell, {
+			text = Locale.get(language, `rarity.{info.rarity}`),
+			size = Theme.text.small,
+			color = C.muted,
+			align = Enum.TextXAlignment.Center,
+		})
+		rarity.Position = UDim2.fromScale(0, 0.62)
+		rarity.Size = UDim2.new(1, 0, 0.3, 0)
+		return
+	end
+
+	local name = Components.label(cell, {
+		text = Locale.get(language, info.nameKey),
+		size = Theme.text.small,
+		font = Theme.font.bodyBold,
+		align = Enum.TextXAlignment.Center,
+	})
+	name.Position = UDim2.fromOffset(4, 4)
+	name.Size = UDim2.new(1, -8, 0, 22)
+
+	local best = Components.label(cell, {
+		text = Format.level(sword.bestLevel),
+		font = Theme.font.display,
+		size = Theme.text.title,
+		color = Theme.heatColor(sword.bestLevel),
+		outline = true,
+		align = Enum.TextXAlignment.Center,
+	})
+	best.Position = UDim2.new(0, 0, 0.32, 0)
+	best.Size = UDim2.new(1, 0, 0.34, 0)
+
+	-- 기념 점 4개 (5·10·15·20강)
+	local dots = Components.frame(
+		cell,
+		{ Position = UDim2.new(0, 0, 1, -18), Size = UDim2.new(1, 0, 0, 12) }
+	)
+	local dotList = Components.list(dots, "horizontal", 5, Enum.HorizontalAlignment.Center)
+	dotList.VerticalAlignment = Enum.VerticalAlignment.Center
+	for index, milestone in Weapons.CODEX_MILESTONES do
+		local reached = data.codex[`{weaponId}:{milestone}`] == true
+		local dot = Components.frame(dots, {
+			Size = UDim2.fromOffset(10, 10),
+			BackgroundColor3 = if reached then Theme.heatColor(milestone) else C.bg,
+			BackgroundTransparency = 0,
+			LayoutOrder = index,
+		})
+		Components.round(dot)
+		Components.stroke(dot, C.line, 1)
 	end
 end
 
---[[
-	도감: 검 1종 = 1칸. 가진 검은 역대 최고 레벨과 달성한 기념 구간(5·10·15·20강)을 보여 준다.
-	서버에 따로 묻지 않고 복제받은 데이터(swords, codex)로 그린다.
-]]
 local function renderCodex()
 	local language = ClientState.getLanguage()
 	local data = ClientState.getData()
 
-	clearRows()
+	Components.clear(content)
+	local holder = Components.frame(content)
+	local scroll = Instance.new("ScrollingFrame")
+	scroll.BackgroundTransparency = 1
+	scroll.BorderSizePixel = 0
+	scroll.Size = UDim2.fromScale(1, 1)
+	scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+	scroll.CanvasSize = UDim2.new()
+	scroll.ScrollBarThickness = 6
+	scroll.ScrollBarImageColor3 = C.line
+	scroll.Parent = holder
+
+	local grid = Instance.new("UIGridLayout")
+	grid.CellPadding = UDim2.fromOffset(8, 8)
+	grid.CellSize = UDim2.new(0.2, -8, 0, 104)
+	grid.SortOrder = Enum.SortOrder.LayoutOrder
+	grid.Parent = scroll
 
 	if data == nil then
-		makeRow(Locale.get(language, "error.not_ready"), COLOR_MUTED, 1)
 		return
 	end
 
-	for index, weaponId in Weapons.Order do
-		local weapon = Weapons.get(weaponId)
-		if weapon == nil then
-			continue
-		end
-
-		local name = Locale.get(language, weapon.nameKey)
-		local rarity = Locale.get(language, `rarity.{weapon.rarity}`)
-		local sword = data.swords[weaponId]
-
-		if sword == nil then
-			makeRow(Locale.get(language, "ui.codexMissing", name, rarity), COLOR_MUTED, index)
-			continue
-		end
-
-		local text = Locale.get(language, "ui.codexOwned", name, rarity, sword.bestLevel)
-
-		local reached: { string } = {}
-		for _, milestone in Weapons.CODEX_MILESTONES do
-			if data.codex[`{weaponId}:{milestone}`] then
-				table.insert(reached, Format.level(milestone))
-			end
-		end
-		if #reached > 0 then
-			text ..= "  ·  " .. Locale.get(
-				language,
-				"ui.codexMilestones",
-				table.concat(reached, " ")
-			)
-		end
-
-		makeRow(text, COLOR_TEXT, index)
+	for slot = 1, CODEX_SLOTS do
+		codexCell(scroll, language, Weapons.Order[slot], data, slot)
 	end
 end
 
 local function renderRanking()
 	local language = ClientState.getLanguage()
+	Components.clear(content)
 
-	rankTitle.Text = Locale.get(language, `ui.rank.{RANK_KIND}`)
+	local title = Components.label(content, {
+		text = Locale.get(language, `ui.rank.{RANK_KIND}`),
+		font = Theme.font.display,
+		size = Theme.text.label,
+		color = C.gold,
+	})
+	title.Size = UDim2.new(1, 0, 0, 30)
 
-	local ok, entries = pcall(function()
-		return boardRemote:InvokeServer(RANK_KIND)
+	local holder = Components.frame(
+		content,
+		{ Position = UDim2.fromOffset(0, 34), Size = UDim2.new(1, 0, 1, -34) }
+	)
+	local scroll = Components.scroller(holder, 4)
+	Components.label(scroll, { text = "...", color = C.muted })
+
+	task.spawn(function()
+		local ok, entries = pcall(function()
+			return boardRemote:InvokeServer(RANK_KIND)
+		end)
+		if not open or activeTab ~= "rank" then
+			return
+		end
+
+		Components.clear(scroll)
+		if not ok or type(entries) ~= "table" or #entries == 0 then
+			Components.label(
+				scroll,
+				{ text = Locale.get(language, "ui.rank.empty"), color = C.muted }
+			)
+			return
+		end
+
+		local myUserId = Players.LocalPlayer.UserId
+		for index, entry in entries do
+			local mine = entry.userId == myUserId
+			local row = Components.frame(scroll, {
+				Size = UDim2.new(1, -8, 0, 40),
+				BackgroundColor3 = if mine then Theme.shade(C.ember, -0.5) else C.sub,
+				BackgroundTransparency = 0.3,
+				LayoutOrder = index,
+			})
+			Components.corner(row, 8)
+			local medal = if entry.rank == 1
+				then C.gold
+				elseif entry.rank == 2 then Color3.fromRGB(216, 216, 216)
+				elseif entry.rank == 3 then Color3.fromRGB(217, 154, 106)
+				else C.muted
+			local rank = Components.label(row, {
+				text = `{entry.rank}`,
+				font = Theme.font.display,
+				size = Theme.text.label,
+				color = medal,
+				align = Enum.TextXAlignment.Center,
+			})
+			rank.Size = UDim2.new(0, 48, 1, 0)
+			local name = Components.label(row, {
+				text = tostring(entry.name),
+				font = Theme.font.bodyBold,
+				color = if mine then C.ember else C.text,
+			})
+			name.Position = UDim2.fromOffset(52, 0)
+			name.Size = UDim2.new(1, -140, 1, 0)
+			local value = Components.label(row, {
+				text = Format.level(entry.value),
+				font = Theme.font.display,
+				size = Theme.text.label,
+				color = Theme.heatColor(entry.value),
+				outline = true,
+				align = Enum.TextXAlignment.Right,
+			})
+			value.AnchorPoint = Vector2.new(1, 0)
+			value.Position = UDim2.new(1, -12, 0, 0)
+			value.Size = UDim2.new(0, 80, 1, 0)
+		end
 	end)
-
-	clearRows()
-
-	if not ok or type(entries) ~= "table" or #entries == 0 then
-		makeRow(Locale.get(language, "ui.rank.empty"), COLOR_MUTED, 1)
-		return
-	end
-
-	local myUserId = Players.LocalPlayer.UserId
-
-	for index, entry in entries do
-		makeRow(
-			Locale.get(language, "ui.rank.row", entry.rank, entry.name, Format.level(entry.value)),
-			if entry.userId == myUserId then COLOR_ACCENT else COLOR_TEXT,
-			index
-		)
-	end
 end
 
 local function applySetting(key: string, value: any)
@@ -168,228 +260,80 @@ end
 local function renderSettings()
 	local language = ClientState.getLanguage()
 	local data = ClientState.getData()
-
-	clearRows()
-
+	Components.clear(content)
 	if data == nil then
-		makeRow(Locale.get(language, "error.not_ready"), COLOR_MUTED, 1)
 		return
 	end
 
-	sfxButton.Text = Locale.get(language, if data.settings.sfx then "ui.sfxOn" else "ui.sfxOff")
-	sfxButton.TextColor3 = if data.settings.sfx then COLOR_ACCENT else COLOR_MUTED
-	languageButton.Text = Locale.get(language, "ui.language")
+	local list = Components.frame(content)
+	Components.list(list, "vertical", 10)
+
+	local sfx = Components.button(list, {
+		text = Locale.get(language, if data.settings.sfx then "ui.sfxOn" else "ui.sfxOff"),
+		style = if data.settings.sfx then "primary" else "secondary",
+		order = 1,
+	})
+	sfx.Activated:Connect(function()
+		applySetting("sfx", not data.settings.sfx)
+	end)
+
+	local lang = Components.button(
+		list,
+		{ text = Locale.get(language, "ui.language"), style = "secondary", order = 2 }
+	)
+	lang.Activated:Connect(function()
+		applySetting("language", if ClientState.getLanguage() == "ko" then "en" else "ko")
+	end)
 end
 
 local function refresh()
-	local language = ClientState.getLanguage()
-
-	for key, button in tabButtons do
-		button.Text = Locale.get(language, `ui.tab.{key}`)
-		button.TextColor3 = if key == activeTab then COLOR_ACCENT else COLOR_MUTED
-	end
-
-	closeButton.Text = Locale.get(language, "ui.close")
-	rankTitle.Visible = activeTab == "rank"
-	settingsRow.Visible = activeTab == "settings"
-
-	if activeTab == "settings" then
-		renderSettings()
+	if not open then
 		return
 	end
-
-	clearRows()
-	makeRow("...", COLOR_MUTED, 0)
-
-	task.spawn(function()
-		if activeTab == "codex" then
-			renderCodex()
-		else
-			renderRanking()
-		end
-	end)
-end
-
-local function makeButton(parent: Instance, props: { [string]: any }): TextButton
-	local button = Instance.new("TextButton")
-	button.BackgroundColor3 = COLOR_ROW
-	button.BorderSizePixel = 0
-	button.Font = Enum.Font.GothamBold
-	button.TextColor3 = COLOR_TEXT
-	button.TextSize = 15
-	button.Size = UDim2.new(1, 0, 0, TOUCH_MIN)
-	button.Text = ""
-	for key, value in props do
-		(button :: any)[key] = value
+	local language = ClientState.getLanguage()
+	for key, button in tabs.buttons do
+		button.Text = Locale.get(language, `ui.tab.{key}`)
 	end
-	button.Parent = parent
+	tabs.select(activeTab)
 
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
-	corner.Parent = button
-
-	return button
+	if activeTab == "codex" then
+		renderCodex()
+	elseif activeTab == "rank" then
+		renderRanking()
+	else
+		renderSettings()
+	end
 end
 
 local function build()
-	local player = Players.LocalPlayer
-
-	gui = Instance.new("ScreenGui")
-	gui.Name = "ForgeRecords"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.DisplayOrder = 12
+	gui = ScreenManager.createScreen("ForgeRecords", 10)
 	gui.Enabled = false
-	gui.Parent = player:WaitForChild("PlayerGui")
 
-	local dim = Instance.new("TextButton")
-	dim.BackgroundColor3 = Color3.new(0, 0, 0)
-	dim.BackgroundTransparency = 0.45
-	dim.BorderSizePixel = 0
-	dim.Size = UDim2.fromScale(1, 1)
-	dim.Text = ""
-	dim.AutoButtonColor = false
-	dim.Parent = gui
+	panel = Components.panel(gui, { Name = "Panel" })
+	Components.closeButton(panel, function()
+		ScreenManager.closeModal()
+	end)
 
-	panel = Instance.new("Frame")
-	panel.BackgroundColor3 = COLOR_PANEL
-	panel.BorderSizePixel = 0
-	panel.AnchorPoint = Vector2.new(0.5, 0.5)
-	panel.Position = UDim2.fromScale(0.5, 0.5)
-	panel.Size = UDim2.new(0.92, 0, 0.8, 0)
-	panel.Parent = gui
+	local tabHolder = Components.frame(
+		panel,
+		{ Position = UDim2.fromOffset(16, 8), Size = UDim2.new(1, -80, 0, Theme.rowHeight) }
+	)
+	tabs = Components.tabs(tabHolder, { "codex", "rank", "settings" }, function(key)
+		activeTab = key :: Tab
+		refresh()
+	end)
 
-	local sizeConstraint = Instance.new("UISizeConstraint")
-	sizeConstraint.MaxSize = Vector2.new(520, 640)
-	sizeConstraint.Parent = panel
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 14)
-	corner.Parent = panel
-
-	local padding = Instance.new("UIPadding")
-	padding.PaddingTop = UDim.new(0, 14)
-	padding.PaddingBottom = UDim.new(0, 14)
-	padding.PaddingLeft = UDim.new(0, 14)
-	padding.PaddingRight = UDim.new(0, 14)
-	padding.Parent = panel
-
-	local list = Instance.new("UIListLayout")
-	list.FillDirection = Enum.FillDirection.Vertical
-	list.SortOrder = Enum.SortOrder.LayoutOrder
-	list.Padding = UDim.new(0, 8)
-	list.Parent = panel
-
-	-- 탭 줄
-	local tabRow = Instance.new("Frame")
-	tabRow.BackgroundTransparency = 1
-	tabRow.Size = UDim2.new(1, 0, 0, TOUCH_MIN)
-	tabRow.LayoutOrder = 1
-	tabRow.Parent = panel
-
-	local tabList = Instance.new("UIListLayout")
-	tabList.FillDirection = Enum.FillDirection.Horizontal
-	tabList.SortOrder = Enum.SortOrder.LayoutOrder
-	tabList.Padding = UDim.new(0, 6)
-	tabList.Parent = tabRow
-
-	for order, key in TABS do
-		local button = makeButton(tabRow, {
-			Size = UDim2.new(1 / #TABS, -4, 1, 0),
-			TextSize = 13,
-			LayoutOrder = order,
-		})
-		button.Activated:Connect(function()
-			activeTab = key
-			refresh()
-		end)
-		tabButtons[key] = button
-	end
-
-	-- 랭킹 탭에서만 보이는 제목 (어떤 순위인지)
-	rankTitle = Instance.new("TextLabel")
-	rankTitle.BackgroundTransparency = 1
-	rankTitle.Font = Enum.Font.GothamMedium
-	rankTitle.TextSize = 14
-	rankTitle.TextColor3 = COLOR_ACCENT
-	rankTitle.Size = UDim2.new(1, 0, 0, 34)
-	rankTitle.Text = ""
-	rankTitle.Visible = false
-	rankTitle.LayoutOrder = 2
-	rankTitle.Parent = panel
-
-	-- 설정 탭에서만 보이는 줄
-	settingsRow = Instance.new("Frame")
-	settingsRow.BackgroundTransparency = 1
-	settingsRow.Size = UDim2.new(1, 0, 0, TOUCH_MIN)
-	settingsRow.Visible = false
-	settingsRow.LayoutOrder = 2
-	settingsRow.Parent = panel
-
-	local settingsList = Instance.new("UIListLayout")
-	settingsList.FillDirection = Enum.FillDirection.Horizontal
-	settingsList.SortOrder = Enum.SortOrder.LayoutOrder
-	settingsList.Padding = UDim.new(0, 8)
-	settingsList.Parent = settingsRow
-
-	sfxButton = makeButton(settingsRow, {
-		Size = UDim2.new(0.5, -4, 1, 0),
-		TextSize = 14,
-		Font = Enum.Font.GothamMedium,
-		LayoutOrder = 1,
+	content = Components.frame(panel, {
+		Position = UDim2.fromOffset(16, 8 + Theme.rowHeight + 12),
+		Size = UDim2.new(1, -32, 1, -(8 + Theme.rowHeight + 12 + 14)),
 	})
-	languageButton = makeButton(settingsRow, {
-		Size = UDim2.new(0.5, -4, 1, 0),
-		TextSize = 14,
-		Font = Enum.Font.GothamMedium,
-		LayoutOrder = 2,
-	})
-
-	sfxButton.Activated:Connect(function()
-		local data = ClientState.getData()
-		if data then
-			applySetting("sfx", not data.settings.sfx)
-		end
-	end)
-
-	languageButton.Activated:Connect(function()
-		local next_ = if ClientState.getLanguage() == "ko" then "en" else "ko"
-		applySetting("language", next_)
-	end)
-
-	scroller = Instance.new("ScrollingFrame")
-	scroller.BackgroundTransparency = 1
-	scroller.BorderSizePixel = 0
-	scroller.Size = UDim2.new(1, 0, 1, -150)
-	scroller.CanvasSize = UDim2.new(0, 0, 0, 0)
-	scroller.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	scroller.ScrollBarThickness = 4
-	scroller.LayoutOrder = 3
-	scroller.Parent = panel
-
-	local scrollList = Instance.new("UIListLayout")
-	scrollList.FillDirection = Enum.FillDirection.Vertical
-	scrollList.SortOrder = Enum.SortOrder.LayoutOrder
-	scrollList.Padding = UDim.new(0, 3)
-	scrollList.Parent = scroller
-
-	closeButton = makeButton(panel, { LayoutOrder = 4 })
-	closeButton.Activated:Connect(function()
-		gui.Enabled = false
-	end)
-	dim.Activated:Connect(function()
-		gui.Enabled = false
-	end)
 end
 
-function CollectionController.toggle()
-	if gui.Enabled then
-		gui.Enabled = false
-		return
+local function place()
+	local layout = ScreenManager.getLayout()
+	if layout then
+		ScreenManager.place(panel, layout.modal)
 	end
-
-	gui.Enabled = true
-	refresh()
 end
 
 function CollectionController.Init()
@@ -398,19 +342,24 @@ function CollectionController.Init()
 	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
 	boardRemote = remotesFolder:WaitForChild(Remotes.Functions.GetLeaderboard) :: RemoteFunction
 	settingRemote = remotesFolder:WaitForChild(Remotes.Functions.SetSetting) :: RemoteFunction
+
+	ScreenManager.registerModal("records", function()
+		open = true
+		gui.Enabled = true
+		refresh()
+	end, function()
+		open = false
+		gui.Enabled = false
+	end)
+
+	ScreenManager.onLayout(place)
 end
 
 function CollectionController.Start()
-	-- 설정을 바꾸면 서버가 데이터를 다시 내려 주므로, 그때 화면을 갱신한다.
+	-- 설정을 바꾸면 서버가 데이터를 다시 내려 주므로 그때 갱신한다 (랭킹은 다시 묻지 않는다).
 	ClientState.onChanged(function()
-		if not gui.Enabled then
-			return
-		end
-
-		if activeTab == "settings" then
-			renderSettings()
-		elseif activeTab == "codex" then
-			renderCodex()
+		if open and activeTab ~= "rank" then
+			refresh()
 		end
 	end)
 end

@@ -17,6 +17,7 @@ type Controller = {
 local CONTROLLER_ORDER = {
 	"SoundController",
 	"EffectsController",
+	"HudController",
 	"FeedController",
 	"OddsTableController",
 	"ShopController",

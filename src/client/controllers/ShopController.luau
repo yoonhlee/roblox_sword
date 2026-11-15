@@ -1,51 +1,45 @@
 --!strict
 --[[
-	ShopController — 상점 화면 (통합 기획서 7·8절).
+	ShopController — 상점 창 (통합 기획서 7·8절).
 
-	위쪽: Robux 로 사는 방지권 상품 (확정 1개 / 확정 묶음 / 확률형)
-	아래쪽: 파편으로 하는 방지권 뽑기 (Robux 가 닿지 않는다)
+	위: Robux 로 사는 방지권 상품 카드 (확정 1개 / 확정 묶음 / 확률형)
+	아래: 파편으로 하는 방지권 뽑기 (Robux 가 닿지 않는다)
 
-	클라이언트는 상품 ID 를 알지 못한다. "이 항목을 사고 싶다"는 키만 서버에 보내고,
-	실제 구매창은 서버가 띄운다. 지급과 뽑기도 전부 서버가 한다.
+	클라이언트는 상품 ID 를 모른다. "이 항목을 사고 싶다"는 키만 보내고 구매창·지급·뽑기는 서버가 한다.
 
 	확률 공개 (로블록스 유료 확률형 정책, 기획서 P10):
 	- 확률형 상품과 파편 뽑기는 사기 전에 모든 결과와 확률(%, 합계 100)을 버튼 바로 아래에 항상 보여 준다.
-	  숨겨진 창이나 아이콘 뒤에 두지 않는다. 이 숫자는 서버가 보낸 값이다.
-	- 천장 포인트(꽝 3번이면 방지권 1개)는 규칙과 현재 점수를 함께 보여 주고,
+	  이 숫자는 서버가 보낸 값이다. 숨겨진 창이나 아이콘 뒤에 두지 않는다.
+	- 천장 포인트(꽝 3번이면 방지권 1개)는 규칙과 현재 점수(막대 n/3)를 함께 보여 주고,
 	  다음 꽝에서 천장이 차는 상태면 꽝 줄의 설명을 "방지권을 받는다"로 바꿔 보여 준다.
-
-	아직 등록되지 않았거나 내용이 비어 있는 상품은 서버가 목록에서 빼기 때문에 여기에는 오지 않는다.
+	아직 등록되지 않았거나 내용이 비어 있는 상품은 서버가 목록에서 빼므로 여기 오지 않는다.
 	유료 확률형이 제한된 유저에게는 서버가 확률형 상품을 보내지 않는다.
 ]]
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Locale = require(Shared:WaitForChild("Locale"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
-
 local Pure = Shared:WaitForChild("Pure")
 local Format = require(Pure:WaitForChild("Format"))
 local DrawLogic = require(Pure:WaitForChild("DrawLogic"))
 
+local client = script.Parent.Parent
+local ClientState = require(client:WaitForChild("ClientState"))
+local ui = client:WaitForChild("ui")
+local Theme = require(ui:WaitForChild("Theme"))
+local Components = require(ui:WaitForChild("Components"))
+local ScreenManager = require(ui:WaitForChild("ScreenManager"))
+
 local controllers = script.Parent
-local ClientState = require(controllers.Parent:WaitForChild("ClientState"))
 local FeedController = require(controllers:WaitForChild("FeedController"))
 local SoundController = require(controllers:WaitForChild("SoundController"))
 
 local ShopController = {}
 ShopController.Name = "ShopController"
 
-local COLOR_PANEL = Color3.fromRGB(34, 30, 38)
-local COLOR_SUB = Color3.fromRGB(52, 46, 58)
-local COLOR_TEXT = Color3.fromRGB(240, 236, 230)
-local COLOR_MUTED = Color3.fromRGB(168, 160, 172)
-local COLOR_ACCENT = Color3.fromRGB(226, 142, 58)
-local COLOR_DISABLED = Color3.fromRGB(72, 68, 76)
-local COLOR_ERROR = Color3.fromRGB(255, 140, 130)
-
-local TOUCH_MIN = 44
+local C = Theme.color
 local PERCENT_DECIMALS = 2
 
 local gui: ScreenGui
@@ -53,75 +47,47 @@ local panel: Frame
 local titleLabel: TextLabel
 local noticeLabel: TextLabel
 local scroller: ScrollingFrame
-local closeButton: TextButton
 
 local itemsRemote: RemoteFunction
 local promptRemote: RemoteFunction
 local shardRemote: RemoteFunction
 
--- 서버가 마지막으로 보낸 상점 목록 (Types.ShopState). 아직 못 받았으면 nil.
 local shopState: any = nil
 local loading = false
 local drawing = false
+local open = false
 
-local function makeButton(parent: Instance, props: { [string]: any }): TextButton
-	local button = Instance.new("TextButton")
-	button.BackgroundColor3 = COLOR_SUB
-	button.BorderSizePixel = 0
-	button.Font = Enum.Font.GothamMedium
-	button.TextColor3 = COLOR_TEXT
-	button.TextSize = 15
-	button.Size = UDim2.new(1, 0, 0, TOUCH_MIN)
-	button.Text = ""
-	for key, value in props do
-		(button :: any)[key] = value
-	end
-	button.Parent = parent
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
-	corner.Parent = button
-
-	return button
+local function showError(reason: string)
+	FeedController.pushRaw(Locale.get(ClientState.getLanguage(), `error.{reason}`), C.fail)
 end
 
-local function makeLine(text: string, color: Color3, order: number, height: number?): TextLabel
-	local label = Instance.new("TextLabel")
-	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.GothamMedium
-	label.TextSize = 14
-	label.TextColor3 = color
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.TextWrapped = true
-	label.Size = UDim2.new(1, 0, 0, height or 20)
-	label.Text = text
-	label.LayoutOrder = order
-	label.Parent = scroller
+local function line(
+	parent: Instance,
+	text: string,
+	color: Color3,
+	order: number,
+	bold: boolean?,
+	height: number?
+): TextLabel
+	local label = Components.label(parent, {
+		text = text,
+		color = color,
+		size = Theme.text.small,
+		font = if bold then Theme.font.bodyBold else Theme.font.body,
+		wrap = height ~= nil,
+		order = order,
+		height = height,
+	})
+	label.Size = UDim2.new(1, -8, 0, height or 24)
 	return label
 end
 
-local function showError(reason: string)
-	FeedController.pushRaw(Locale.get(ClientState.getLanguage(), `error.{reason}`), COLOR_ERROR)
-end
-
--- 상품 한 줄에 쓸 이름. 확정형은 방지권 개수를 함께 보여 준다.
-local function itemLabel(language: string, item: any): string
-	return Locale.get(language, `shop.{tostring(item.key)}`, tonumber(item.ticketAmount) or 0)
-end
-
---[[
-	결과 한 줄: "· 방지권 3개  10%" / "· 꽝 …  70%"
-	missKey 는 꽝 줄에 쓸 문구 키(유료는 천장 포인트 안내가 붙고, 파편 뽑기는 그냥 꽝이다).
-]]
 local function outcomeText(language: string, outcome: any, missKey: string, ...: any): string
 	local percent = Format.percent(tonumber(outcome.percent) or 0, PERCENT_DECIMALS)
 	local tickets = tonumber(outcome.tickets) or 0
-
 	if tickets > 0 then
 		return Locale.get(language, "shop.outcomeTickets", tickets, percent)
 	end
-
-	-- 꽝 줄은 문구마다 끼워 넣는 값이 달라서 확률을 뒤에 따로 붙인다.
 	return `{Locale.get(language, missKey, ...)}  {percent}`
 end
 
@@ -129,7 +95,6 @@ local function requestPurchase(key: string)
 	local ok, response = pcall(function()
 		return promptRemote:InvokeServer(key)
 	end)
-
 	if not ok or type(response) ~= "table" then
 		showError("unknown")
 	elseif response.ok ~= true then
@@ -149,7 +114,6 @@ local function requestShardDraw()
 	local ok, response = pcall(function()
 		return shardRemote:InvokeServer()
 	end)
-
 	drawing = false
 
 	if not ok or type(response) ~= "table" then
@@ -157,43 +121,137 @@ local function requestShardDraw()
 	elseif response.ok ~= true then
 		showError(tostring(response.reason))
 	else
-		-- 결과는 서버가 정한 값이다.
 		local language = ClientState.getLanguage()
 		local tickets = tonumber(response.tickets) or 0
 		if tickets > 0 then
 			SoundController.play("success")
-			FeedController.pushRaw(Locale.get(language, "shop.shardDrawWin", tickets), COLOR_ACCENT)
+			FeedController.pushRaw(Locale.get(language, "shop.shardDrawWin", tickets), C.ticket)
 		else
 			SoundController.play("keep")
-			FeedController.pushRaw(Locale.get(language, "shop.shardDrawMiss"), COLOR_MUTED)
+			FeedController.pushRaw(Locale.get(language, "shop.shardDrawMiss"), C.muted)
 		end
 	end
-
 	render()
 end
 
--- 마지막으로 받은 목록과 지금 내 데이터(천장 포인트, 파편)로 화면을 다시 그린다. 서버를 부르지 않는다.
+-- 상품 카드 하나
+local function productCard(
+	language: string,
+	item: any,
+	order: number,
+	pity: {
+		points: number,
+		perMiss: number,
+		threshold: number,
+		tickets: number,
+	}
+)
+	local isRandom = item.kind == "random"
+	local card = Components.panel(scroller, {
+		Size = UDim2.new(1, -8, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundColor3 = C.bg,
+		LayoutOrder = order,
+	})
+	Components.padding(card, 12)
+	Components.list(card, "vertical", 6)
+
+	local head = Components.frame(card, { Size = UDim2.new(1, 0, 0, 40), LayoutOrder = 1 })
+	local icon = Components.frame(head, {
+		Size = UDim2.fromOffset(36, 36),
+		Position = UDim2.new(0, 0, 0.5, 0),
+		AnchorPoint = Vector2.new(0, 0.5),
+	})
+	Components.glyph(icon, "ticket", C.ticket)
+	local title = Components.label(head, {
+		text = Locale.get(language, `shop.{tostring(item.key)}`, tonumber(item.ticketAmount) or 0),
+		font = Theme.font.display,
+		size = Theme.text.label,
+		outline = true,
+	})
+	title.Position = UDim2.fromOffset(44, 0)
+	title.Size = UDim2.new(1, -44, 1, 0)
+
+	if isRandom and type(item.outcomes) == "table" then
+		-- 사기 전에 모든 결과와 확률 (합계 100%)
+		line(card, Locale.get(language, "shop.oddsTitle"), C.muted, 2, true)
+		local pityNext = DrawLogic.isPityNext(pity.points, pity.perMiss, pity.threshold)
+		for index, outcome in item.outcomes do
+			local text = if pityNext
+				then outcomeText(language, outcome, "shop.outcomeMissPity", pity.tickets)
+				else outcomeText(language, outcome, "shop.outcomeMiss", pity.perMiss)
+			line(
+				card,
+				text,
+				if (tonumber(outcome.tickets) or 0) > 0 then C.ticket else C.text,
+				2 + index
+			)
+		end
+
+		local gauge = Components.frame(card, { Size = UDim2.new(1, 0, 0, 22), LayoutOrder = 50 })
+		local gaugeLabel = Components.label(gauge, {
+			text = Locale.get(language, "shop.pityShort", pity.points, pity.threshold),
+			size = Theme.text.small,
+			font = Theme.font.bodyBold,
+			color = C.ember,
+		})
+		gaugeLabel.Size = UDim2.new(0.42, 0, 1, 0)
+		local bar = Components.progressBar(gauge, C.ember, 12)
+		bar.frame.AnchorPoint = Vector2.new(0, 0.5)
+		bar.frame.Position = UDim2.new(0.44, 0, 0.5, 0)
+		bar.frame.Size = UDim2.new(0.56, 0, 0, 12)
+		bar.set(if pity.threshold > 0 then pity.points / pity.threshold else 0)
+
+		line(
+			card,
+			Locale.get(
+				language,
+				"shop.pity",
+				pity.points,
+				pity.threshold,
+				pity.perMiss,
+				pity.threshold,
+				pity.tickets
+			),
+			C.muted,
+			51,
+			false,
+			44
+		)
+	end
+
+	local buy = Components.button(
+		card,
+		{ text = Locale.get(language, "shop.buy"), style = "primary", order = 99 }
+	)
+	local key = tostring(item.key)
+	buy.Activated:Connect(function()
+		SoundController.play("click")
+		task.spawn(requestPurchase, key)
+	end)
+end
+
 render = function()
+	if not open then
+		return
+	end
+
 	local language = ClientState.getLanguage()
 	local data = ClientState.getData()
 
 	titleLabel.Text = Locale.get(language, "ui.shopTitle")
 	noticeLabel.Text = Locale.get(language, "shop.notice")
-	closeButton.Text = Locale.get(language, "ui.close")
-
-	for _, child in scroller:GetChildren() do
-		if child:IsA("TextButton") or child:IsA("TextLabel") then
-			child:Destroy()
-		end
-	end
+	Components.clear(scroller)
 
 	local state = shopState
 	if type(state) ~= "table" then
-		makeLine(
+		line(
+			scroller,
 			Locale.get(language, if loading then "ui.loading" else "ui.shopEmpty"),
-			COLOR_MUTED,
+			C.muted,
 			1,
-			40
+			false,
+			60
 		)
 		return
 	end
@@ -202,7 +260,34 @@ render = function()
 	local shardDraw = if type(state.shardDraw) == "table" then state.shardDraw else nil
 
 	if #items == 0 and shardDraw == nil then
-		makeLine(Locale.get(language, "ui.shopEmpty"), COLOR_MUTED, 1, 40)
+		-- 빈 상태: 지금은 상품 ID·수치가 미정이라 이게 정상이다
+		local empty = Components.panel(
+			scroller,
+			{ Size = UDim2.new(1, -8, 0, 150), BackgroundColor3 = C.bg, LayoutOrder = 1 }
+		)
+		local icon = Components.frame(empty, {
+			Size = UDim2.fromOffset(56, 56),
+			Position = UDim2.new(0.5, 0, 0, 16),
+			AnchorPoint = Vector2.new(0.5, 0),
+		})
+		Components.glyph(icon, "bag", C.gold)
+		local soon = Components.label(empty, {
+			text = Locale.get(language, "ui.shopEmpty"),
+			font = Theme.font.display,
+			size = Theme.text.label,
+			color = C.gold,
+			align = Enum.TextXAlignment.Center,
+		})
+		soon.Position = UDim2.fromOffset(0, 80)
+		local promise = Components.label(empty, {
+			text = Locale.get(language, "shop.promise"),
+			size = Theme.text.small,
+			color = C.muted,
+			align = Enum.TextXAlignment.Center,
+			wrap = true,
+		})
+		promise.Position = UDim2.fromOffset(12, 108)
+		promise.Size = UDim2.new(1, -24, 0, 36)
 		return
 	end
 
@@ -212,216 +297,106 @@ render = function()
 		return order
 	end
 
-	local pityPerMiss = tonumber(state.pityPerMiss) or 1
-	local pityThreshold = tonumber(state.pityThreshold) or 0
-	local pityTickets = tonumber(state.pityTickets) or 0
-	local pityPoints = if data then data.pityPoints else 0
+	local pity = {
+		points = if data then data.pityPoints else 0,
+		perMiss = tonumber(state.pityPerMiss) or 1,
+		threshold = tonumber(state.pityThreshold) or 0,
+		tickets = tonumber(state.pityTickets) or 0,
+	}
 
-	-- Robux 상품
 	if #items > 0 then
-		makeLine(Locale.get(language, "shop.sectionPaid"), COLOR_ACCENT, nextOrder(), 22)
+		line(scroller, Locale.get(language, "shop.sectionPaid"), C.ember, nextOrder(), true)
 	end
-
 	for _, item in items do
-		if type(item) ~= "table" or type(item.key) ~= "string" then
-			continue
-		end
-
-		local key = item.key
-		local row = makeButton(scroller, {
-			Text = itemLabel(language, item),
-			LayoutOrder = nextOrder(),
-		})
-		row.Activated:Connect(function()
-			SoundController.play("click")
-			task.spawn(requestPurchase, key)
-		end)
-
-		if item.kind == "random" and type(item.outcomes) == "table" then
-			-- 사기 전에 모든 결과와 확률을 보여 준다(합계 100%).
-			makeLine(Locale.get(language, "shop.oddsTitle"), COLOR_MUTED, nextOrder())
-
-			local pityNext = DrawLogic.isPityNext(pityPoints, pityPerMiss, pityThreshold)
-			for _, outcome in item.outcomes do
-				local text = if pityNext
-					then outcomeText(language, outcome, "shop.outcomeMissPity", pityTickets)
-					else outcomeText(language, outcome, "shop.outcomeMiss", pityPerMiss)
-				makeLine(text, COLOR_TEXT, nextOrder())
-			end
-
-			makeLine(
-				Locale.get(
-					language,
-					"shop.pity",
-					pityPoints,
-					pityThreshold,
-					pityPerMiss,
-					pityThreshold,
-					pityTickets
-				),
-				COLOR_ACCENT,
-				nextOrder(),
-				54
-			)
+		if type(item) == "table" and type(item.key) == "string" then
+			productCard(language, item, nextOrder(), pity)
 		end
 	end
 
-	-- 파편 뽑기
 	if shardDraw ~= nil and type(shardDraw.outcomes) == "table" then
 		local cost = tonumber(shardDraw.cost) or 0
 		local shards = if data then data.shards else 0
 		local affordable = shards >= cost and not drawing
 
-		makeLine(Locale.get(language, "shop.sectionFree"), COLOR_ACCENT, nextOrder(), 22)
-
-		local row = makeButton(scroller, {
-			Text = Locale.get(language, "shop.shardDraw", cost),
+		line(scroller, Locale.get(language, "shop.sectionFree"), C.ember, nextOrder(), true)
+		local card = Components.panel(scroller, {
+			Size = UDim2.new(1, -8, 0, 0),
+			AutomaticSize = Enum.AutomaticSize.Y,
+			BackgroundColor3 = C.bg,
 			LayoutOrder = nextOrder(),
-			BackgroundColor3 = if affordable then COLOR_SUB else COLOR_DISABLED,
-			TextColor3 = if affordable then COLOR_TEXT else COLOR_MUTED,
-			Active = affordable,
-			AutoButtonColor = affordable,
 		})
-		row.Activated:Connect(function()
-			if affordable then
+		Components.padding(card, 12)
+		Components.list(card, "vertical", 6)
+
+		line(
+			card,
+			Locale.get(language, "shop.shardOwned", Format.comma(shards)),
+			if affordable then C.shard else C.fail,
+			1,
+			true
+		)
+		line(card, Locale.get(language, "shop.oddsTitle"), C.muted, 2, true)
+		for index, outcome in shardDraw.outcomes do
+			line(card, outcomeText(language, outcome, "shop.outcomeMissFree"), C.text, 2 + index)
+		end
+		local draw = Components.button(
+			card,
+			{ text = Locale.get(language, "shop.shardDraw", cost), style = "primary", order = 99 }
+		)
+		Components.setEnabled(draw, affordable)
+		draw.Activated:Connect(function()
+			if draw.Active then
 				SoundController.play("click")
 				task.spawn(requestShardDraw)
 			end
 		end)
-
-		makeLine(
-			Locale.get(language, "shop.shardOwned", Format.comma(shards)),
-			COLOR_MUTED,
-			nextOrder()
-		)
-		makeLine(Locale.get(language, "shop.oddsTitle"), COLOR_MUTED, nextOrder())
-		for _, outcome in shardDraw.outcomes do
-			makeLine(
-				outcomeText(language, outcome, "shop.outcomeMissFree"),
-				COLOR_TEXT,
-				nextOrder()
-			)
-		end
 	end
 end
 
--- 서버에서 상점 목록을 다시 받아 온다.
 local function refresh()
 	loading = true
 	render()
-
 	local ok, state = pcall(function()
 		return itemsRemote:InvokeServer()
 	end)
-
 	loading = false
 	shopState = if ok and type(state) == "table" then state else nil
 	render()
 end
 
 local function build()
-	local player = Players.LocalPlayer
-
-	gui = Instance.new("ScreenGui")
-	gui.Name = "ForgeShop"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.DisplayOrder = 15
+	gui = ScreenManager.createScreen("ForgeShop", 10)
 	gui.Enabled = false
-	gui.Parent = player:WaitForChild("PlayerGui")
 
-	local dim = Instance.new("TextButton")
-	dim.BackgroundColor3 = Color3.new(0, 0, 0)
-	dim.BackgroundTransparency = 0.45
-	dim.BorderSizePixel = 0
-	dim.Size = UDim2.fromScale(1, 1)
-	dim.Text = ""
-	dim.AutoButtonColor = false
-	dim.Parent = gui
-
-	panel = Instance.new("Frame")
-	panel.BackgroundColor3 = COLOR_PANEL
-	panel.BorderSizePixel = 0
-	panel.AnchorPoint = Vector2.new(0.5, 0.5)
-	panel.Position = UDim2.fromScale(0.5, 0.5)
-	panel.Size = UDim2.new(0.9, 0, 0.8, 0)
-	panel.Parent = gui
-
-	local sizeConstraint = Instance.new("UISizeConstraint")
-	sizeConstraint.MaxSize = Vector2.new(460, 620)
-	sizeConstraint.Parent = panel
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 14)
-	corner.Parent = panel
-
-	local padding = Instance.new("UIPadding")
-	padding.PaddingTop = UDim.new(0, 16)
-	padding.PaddingBottom = UDim.new(0, 16)
-	padding.PaddingLeft = UDim.new(0, 16)
-	padding.PaddingRight = UDim.new(0, 16)
-	padding.Parent = panel
-
-	local list = Instance.new("UIListLayout")
-	list.FillDirection = Enum.FillDirection.Vertical
-	list.SortOrder = Enum.SortOrder.LayoutOrder
-	list.Padding = UDim.new(0, 8)
-	list.Parent = panel
-
-	titleLabel = Instance.new("TextLabel")
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 20
-	titleLabel.TextColor3 = COLOR_TEXT
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	titleLabel.Size = UDim2.new(1, 0, 0, 28)
-	titleLabel.LayoutOrder = 1
-	titleLabel.Parent = panel
-
-	scroller = Instance.new("ScrollingFrame")
-	scroller.BackgroundTransparency = 1
-	scroller.BorderSizePixel = 0
-	scroller.Size = UDim2.new(1, 0, 1, -140)
-	scroller.CanvasSize = UDim2.new(0, 0, 0, 0)
-	scroller.AutomaticCanvasSize = Enum.AutomaticSize.Y
-	scroller.ScrollBarThickness = 4
-	scroller.LayoutOrder = 2
-	scroller.Parent = panel
-
-	local scrollList = Instance.new("UIListLayout")
-	scrollList.FillDirection = Enum.FillDirection.Vertical
-	scrollList.SortOrder = Enum.SortOrder.LayoutOrder
-	scrollList.Padding = UDim.new(0, 6)
-	scrollList.Parent = scroller
-
-	noticeLabel = Instance.new("TextLabel")
-	noticeLabel.BackgroundTransparency = 1
-	noticeLabel.Font = Enum.Font.GothamMedium
-	noticeLabel.TextSize = 12
-	noticeLabel.TextColor3 = COLOR_MUTED
-	noticeLabel.TextWrapped = true
-	noticeLabel.TextXAlignment = Enum.TextXAlignment.Left
-	noticeLabel.Size = UDim2.new(1, 0, 0, 36)
-	noticeLabel.LayoutOrder = 3
-	noticeLabel.Parent = panel
-
-	closeButton = makeButton(panel, { LayoutOrder = 4 })
-	closeButton.Activated:Connect(function()
-		gui.Enabled = false
+	panel = Components.panel(gui, { Name = "Panel" })
+	Components.closeButton(panel, function()
+		ScreenManager.closeModal()
 	end)
-	dim.Activated:Connect(function()
-		gui.Enabled = false
-	end)
+
+	titleLabel = Components.label(
+		panel,
+		{ font = Theme.font.display, size = Theme.text.title, color = C.gold, outline = true }
+	)
+	titleLabel.Position = UDim2.fromOffset(16, 12)
+	titleLabel.Size = UDim2.new(1, -80, 0, 40)
+
+	local holder = Components.frame(
+		panel,
+		{ Position = UDim2.fromOffset(16, 58), Size = UDim2.new(1, -32, 1, -58 - 48) }
+	)
+	scroller = Components.scroller(holder, 10)
+
+	noticeLabel = Components.label(panel, { size = Theme.text.small, color = C.muted, wrap = true })
+	noticeLabel.AnchorPoint = Vector2.new(0, 1)
+	noticeLabel.Position = UDim2.new(0, 16, 1, -8)
+	noticeLabel.Size = UDim2.new(1, -32, 0, 36)
 end
 
-function ShopController.toggle()
-	if gui.Enabled then
-		gui.Enabled = false
-		return
+local function place()
+	local layout = ScreenManager.getLayout()
+	if layout then
+		ScreenManager.place(panel, layout.modal)
 	end
-
-	gui.Enabled = true
-	task.spawn(refresh)
 end
 
 function ShopController.Init()
@@ -432,12 +407,18 @@ function ShopController.Init()
 	promptRemote = remotesFolder:WaitForChild(Remotes.Functions.PromptPurchase) :: RemoteFunction
 	shardRemote = remotesFolder:WaitForChild(Remotes.Functions.ShardDraw) :: RemoteFunction
 
-	-- 천장 포인트나 파편이 바뀌면(구매·뽑기 직후) 열려 있는 상점을 바로 다시 그린다.
-	ClientState.onChanged(function()
-		if gui.Enabled then
-			render()
-		end
+	ScreenManager.registerModal("shop", function()
+		open = true
+		gui.Enabled = true
+		task.spawn(refresh)
+	end, function()
+		open = false
+		gui.Enabled = false
 	end)
+
+	ScreenManager.onLayout(place)
+	-- 천장 포인트나 파편이 바뀌면(구매·뽑기 직후) 열려 있는 상점을 바로 다시 그린다.
+	ClientState.onChanged(render)
 end
 
 function ShopController.Start() end

@@ -1,151 +1,128 @@
 --!strict
 --[[
-	FeedController — 결과 피드.
-	채팅 로그처럼 최근 결과가 한 줄씩 쌓인다. 모루 영감의 대사로 출력한다.
+	FeedController — 결과 피드 (모루 영감의 대사, 통합 기획서 8절).
 
-	Phase 2 에서 연출(페이드, 강조색, 접이식 모바일 레이아웃)을 다듬는다.
-	지금은 "서버 응답을 받은 뒤에만 한 줄 추가된다"는 흐름을 먼저 세운다.
+	보이는 곳이 화면 상태에 따라 바뀐다.
+	  대장간: 패널 왼쪽 아래 칸에 최근 몇 줄 (ForgeLayout 의 feed 자리)
+	  로비:   위쪽 가운데 한 줄 (최근 것 하나, 6초 뒤 흐려짐). 공지 배너가 떠 있으면 숨는다
+	  경주:   숨김
+	최근 7줄을 기억한다. 기본 채팅창에도 같은 내용을 띄운다(시스템 메시지·서버 공지).
 ]]
 
-local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TextChatService = game:GetService("TextChatService")
-local Workspace = game:GetService("Workspace")
+local TweenService = game:GetService("TweenService")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Locale = require(Shared:WaitForChild("Locale"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 
-local ClientState = require(script.Parent.Parent:WaitForChild("ClientState"))
+local client = script.Parent.Parent
+local ClientState = require(client:WaitForChild("ClientState"))
+local ui = client:WaitForChild("ui")
+local Theme = require(ui:WaitForChild("Theme"))
+local Components = require(ui:WaitForChild("Components"))
+local ScreenManager = require(ui:WaitForChild("ScreenManager"))
+local ForgeLayout = require(ui:WaitForChild("ForgeLayout"))
 
 local FeedController = {}
 FeedController.Name = "FeedController"
 
 local MAX_LINES = 7
-local NARROW_WIDTH = 700
+local LINE_HEIGHT = 24
+local LOBBY_FADE_SECONDS = 6
+
+local C = Theme.color
 
 local OUTCOME_COLOR: { [string]: Color3 } = {
-	system = Color3.fromRGB(230, 226, 220),
-	success = Color3.fromRGB(255, 208, 112),
-	keep = Color3.fromRGB(198, 198, 198),
-	fail = Color3.fromRGB(255, 120, 108),
-	protected = Color3.fromRGB(140, 210, 255),
+	system = C.text,
+	success = C.ember,
+	keep = C.keep,
+	fail = C.fail,
+	protected = C.protect,
+	max = C.white,
 	broadcast = Color3.fromRGB(180, 255, 190),
 }
 
-local feedGui: ScreenGui? = nil
-local container: Frame? = nil
-local toggleButton: TextButton? = nil
-local lineCount = 0
-local collapsed = false
+type Line = { text: string, color: Color3 }
 
-local function layout()
-	local frame = container
-	if frame == nil then
-		return
-	end
+local lines: { Line } = {}
 
-	local viewport = Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize
-	local isNarrow = viewport ~= nil and viewport.X < NARROW_WIDTH
+local gui: ScreenGui
+local forgeBox: Frame
+local forgeList: Frame
+local lobbyLine: TextLabel
+local lobbyFadeToken = 0
+local forgeCapacity = 3 -- 대장간 피드 칸에 들어가는 줄 수 (배치 때 다시 계산)
 
-	local button = toggleButton
+-- 다른 컨트롤러가 "배너가 떠 있는지" 알려 주는 함수 (HudController 가 등록)
+local isBannerVisible: () -> boolean = function()
+	return false
+end
 
-	if isNarrow then
-		-- 모바일: 화면 위쪽에 가로로 넓게, 접을 수 있게
-		frame.AnchorPoint = Vector2.new(0.5, 0)
-		frame.Position = UDim2.new(0.5, 0, 0, 64)
-		frame.Size = UDim2.new(1, -24, 0, if collapsed then 0 else 132)
-		frame.Visible = not collapsed
+local function redrawForge()
+	Components.clear(forgeList)
 
-		if button then
-			button.Visible = true
-			button.AnchorPoint = Vector2.new(0.5, 0)
-			button.Position = UDim2.new(0.5, 0, 0, if collapsed then 64 else 200)
-		end
-	else
-		-- 데스크톱: 우측 세로 (항상 펼침)
-		frame.AnchorPoint = Vector2.new(1, 0)
-		frame.Position = UDim2.new(1, -16, 0, 72)
-		frame.Size = UDim2.new(0, 320, 0, 220)
-		frame.Visible = true
-
-		if button then
-			button.Visible = false
-		end
+	-- 칸 높이에 들어가는 만큼만, 최근 것이 맨 아래
+	local first = math.max(1, #lines - forgeCapacity + 1)
+	for index = first, #lines do
+		local line = lines[index]
+		local label = Components.label(forgeList, {
+			text = line.text,
+			color = line.color,
+			size = Theme.text.small,
+			order = index,
+			height = LINE_HEIGHT,
+		})
+		label.TextTruncate = Enum.TextTruncate.AtEnd
 	end
 end
 
-local function build()
-	local player = Players.LocalPlayer
-	local gui = Instance.new("ScreenGui")
-	gui.Name = "ForgeFeed"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	gui.Parent = player:WaitForChild("PlayerGui")
-
-	local frame = Instance.new("Frame")
-	frame.Name = "Lines"
-	frame.BackgroundColor3 = Color3.fromRGB(18, 16, 20)
-	frame.BackgroundTransparency = 0.35
-	frame.BorderSizePixel = 0
-	frame.Parent = gui
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
-	corner.Parent = frame
-
-	local padding = Instance.new("UIPadding")
-	padding.PaddingTop = UDim.new(0, 8)
-	padding.PaddingBottom = UDim.new(0, 8)
-	padding.PaddingLeft = UDim.new(0, 10)
-	padding.PaddingRight = UDim.new(0, 10)
-	padding.Parent = frame
-
-	local list = Instance.new("UIListLayout")
-	list.FillDirection = Enum.FillDirection.Vertical
-	list.SortOrder = Enum.SortOrder.LayoutOrder
-	list.VerticalAlignment = Enum.VerticalAlignment.Bottom
-	list.Padding = UDim.new(0, 2)
-	list.Parent = frame
-
-	-- 모바일에서 피드를 접었다 펼치는 버튼 (최소 터치 영역 44px)
-	local toggle = Instance.new("TextButton")
-	toggle.Name = "FeedToggle"
-	toggle.BackgroundColor3 = Color3.fromRGB(52, 46, 58)
-	toggle.BorderSizePixel = 0
-	toggle.Font = Enum.Font.GothamMedium
-	toggle.TextSize = 13
-	toggle.TextColor3 = Color3.fromRGB(230, 226, 220)
-	toggle.Size = UDim2.fromOffset(84, 44)
-	toggle.Visible = false
-	toggle.Parent = gui
-
-	local toggleCorner = Instance.new("UICorner")
-	toggleCorner.CornerRadius = UDim.new(0, 10)
-	toggleCorner.Parent = toggle
-
-	toggle.Activated:Connect(function()
-		collapsed = not collapsed
-		layout()
-	end)
-
-	feedGui = gui
-	container = frame
-	toggleButton = toggle
-	layout()
-
-	local camera = Workspace.CurrentCamera
-	if camera then
-		camera:GetPropertyChangedSignal("ViewportSize"):Connect(layout)
+local function place()
+	local layout = ScreenManager.getLayout()
+	if layout == nil then
+		return
 	end
+
+	local forge = ForgeLayout.compute(layout.forgePanel)
+	ScreenManager.place(forgeBox, forge.feedAbsolute)
+	forgeList.Size = UDim2.new(1, -16, 1, -12)
+	forgeCapacity = math.max(1, math.floor((forge.feedAbsolute.h - 12) / LINE_HEIGHT))
+	ScreenManager.place(lobbyLine, layout.feedLobby)
+	redrawForge()
+end
+
+local function render()
+	local mode = ScreenManager.getMode()
+	gui.Enabled = not ScreenManager.isRacing()
+	forgeBox.Visible = mode == "forge"
+	lobbyLine.Visible = mode == "lobby" and not isBannerVisible() and lobbyLine.Text ~= ""
+end
+
+local function showInLobby(line: Line)
+	lobbyLine.Text = line.text
+	lobbyLine.TextColor3 = line.color
+	lobbyLine.TextTransparency = 0
+	lobbyLine.BackgroundTransparency = 0.25
+	render()
+
+	lobbyFadeToken += 1
+	local token = lobbyFadeToken
+	task.delay(LOBBY_FADE_SECONDS, function()
+		if token ~= lobbyFadeToken then
+			return
+		end
+		TweenService:Create(lobbyLine, TweenInfo.new(0.8), {
+			TextTransparency = 1,
+			BackgroundTransparency = 1,
+		}):Play()
+	end)
 end
 
 --[[
 	기본 채팅창에도 같은 내용을 띄운다.
 	TextChannel:DisplaySystemMessage() 는 공식 문서상 클라이언트에서만 호출할 수 있고,
-	그 메시지는 이 플레이어에게만 보인다. 그래서 전체 공지는 서버가 리모트로
-	모든 클라이언트에 보내고, 각자 자기 채팅창에 띄우는 구조를 쓴다.
+	그 메시지는 이 플레이어에게만 보인다.
 ]]
 local function displayInChat(text: string)
 	if TextChatService.ChatVersion ~= Enum.ChatVersion.TextChatService then
@@ -166,43 +143,17 @@ local function displayInChat(text: string)
 end
 
 local function push(text: string, color: Color3)
-	local frame = container
-	if frame == nil then
-		return
+	local line = { text = text, color = color }
+	table.insert(lines, line)
+	while #lines > MAX_LINES do
+		table.remove(lines, 1)
 	end
 
-	local label = Instance.new("TextLabel")
-	label.BackgroundTransparency = 1
-	label.Size = UDim2.new(1, 0, 0, 18)
-	label.Font = Enum.Font.GothamMedium
-	label.TextSize = 14
-	label.TextColor3 = color
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.TextTruncate = Enum.TextTruncate.AtEnd
-	label.Text = text
-	lineCount += 1
-	label.LayoutOrder = lineCount
-	label.Parent = frame
-
-	-- 오래된 줄부터 지운다.
-	local labels: { TextLabel } = {}
-	for _, child in frame:GetChildren() do
-		if child:IsA("TextLabel") then
-			table.insert(labels, child)
-		end
-	end
-
-	if #labels > MAX_LINES then
-		table.sort(labels, function(a, b)
-			return a.LayoutOrder < b.LayoutOrder
-		end)
-		for index = 1, #labels - MAX_LINES do
-			labels[index]:Destroy()
-		end
-	end
+	redrawForge()
+	showInLobby(line)
 end
 
--- 강화 결과 한 줄. 서버 응답을 받은 뒤에만 호출한다.
+-- 강화 결과 한 줄. 서버 응답을 받은 뒤(연출이 끝난 뒤)에만 호출한다.
 function FeedController.pushOutcome(outcome: string)
 	local language = ClientState.getLanguage()
 	local npc = Locale.get(language, "npc.anvilElder.name")
@@ -212,28 +163,47 @@ function FeedController.pushOutcome(outcome: string)
 		then `feed.{outcome}.{math.random(1, variants)}`
 		else `feed.{outcome}.1`
 
-	push(`{npc}: {Locale.get(language, key)}`, OUTCOME_COLOR[outcome] or Color3.new(1, 1, 1))
+	push(`{npc}: {Locale.get(language, key)}`, OUTCOME_COLOR[outcome] or C.text)
 end
 
 function FeedController.pushRaw(text: string, color: Color3?)
-	push(text, color or Color3.new(1, 1, 1))
+	push(text, color or C.text)
+end
+
+function FeedController.setBannerCheck(check: () -> boolean)
+	isBannerVisible = check
+	render()
 end
 
 function FeedController.Init()
-	build()
+	gui = ScreenManager.createScreen("ForgeFeed", 6)
 
-	local button = toggleButton
-	if button then
-		button.Text = Locale.get(ClientState.getLanguage(), "ui.feedToggle")
-	end
+	forgeBox = Components.frame(gui, {
+		Name = "ForgeFeed",
+		BackgroundColor3 = C.bg,
+		BackgroundTransparency = 0.25,
+	})
+	Components.corner(forgeBox, 10)
+	forgeList = Components.frame(forgeBox, {
+		Position = UDim2.fromOffset(8, 6),
+	})
+	local listLayout = Components.list(forgeList, "vertical", 0)
+	listLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
 
-	-- 경주 화면이 떠 있는 동안에는 피드를 숨긴다(쌓인 줄은 로비로 돌아오면 다시 보인다).
-	ClientState.onChanged(function()
-		local screen = feedGui
-		if screen then
-			screen.Enabled = not ClientState.isInRace()
-		end
-	end)
+	lobbyLine = Components.label(gui, {
+		size = Theme.text.small,
+		font = Theme.font.bodyBold,
+		align = Enum.TextXAlignment.Center,
+	})
+	lobbyLine.Name = "LobbyLine"
+	lobbyLine.BackgroundColor3 = C.bg
+	lobbyLine.BackgroundTransparency = 1
+	Components.corner(lobbyLine, 10)
+
+	ScreenManager.onLayout(place)
+	ScreenManager.onStateChanged(render)
+	ClientState.onChanged(render)
+	render()
 end
 
 function FeedController.Start()
@@ -257,7 +227,7 @@ function FeedController.Start()
 			push(text, OUTCOME_COLOR.broadcast)
 			displayInChat(text)
 		elseif payload.kind == "system" and type(payload.text) == "string" then
-			-- 채팅 명령어의 응답. 채팅창과 피드 양쪽에 남긴다.
+			-- 채팅 명령어의 응답 등. 채팅창과 피드 양쪽에 남긴다.
 			push(payload.text, OUTCOME_COLOR.system)
 			displayInChat(payload.text)
 		end
