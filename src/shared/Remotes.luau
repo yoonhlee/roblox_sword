@@ -36,6 +36,7 @@ Remotes.Events = {
 	LiveOpsChanged = "LiveOpsChanged", -- 이벤트/점검 상태 변경
 	RaceUpdate = "RaceUpdate", -- 경주 진행 알림 (Types.RaceUpdate)
 	TreadmillUpdate = "TreadmillUpdate", -- 트레드밀 진행 상태 (Types.TreadmillUpdate)
+	WorldEvent = "WorldEvent", -- 세계에서 일어난 일 (예: 모루 근접 버튼 → 대장간 열기)
 }
 
 -- 서버 전용: 리모트 폴더와 인스턴스를 생성한다.

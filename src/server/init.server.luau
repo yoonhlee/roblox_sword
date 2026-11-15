@@ -30,6 +30,7 @@ local SERVICE_ORDER = {
 	"CodexService",
 	"EnhanceService",
 	"SwordService",
+	"SwordDisplayService",
 	"TreadmillService",
 	"RaceService",
 	"ChatCommandService",

@@ -15,11 +15,13 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Types = require(Shared:WaitForChild("Types"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local TreadmillLogic = require(Shared:WaitForChild("Pure"):WaitForChild("TreadmillLogic"))
+local World = require(Shared:WaitForChild("Config"):WaitForChild("World"))
 
 local services = script.Parent
 local DataService = require(services:WaitForChild("DataService"))
@@ -71,10 +73,31 @@ local function padUnder(player: Player): WorldService.TreadmillPad?
 	return nil
 end
 
+--[[
+	광장 연출용 상태를 세계 물체의 속성으로 알린다 (기기가 보고 벨트·풀무·화덕을 움직인다).
+	  발판 Occupied: 누가 올라서 있는지 / Lobby TreadmillUsers: 러닝머신 위 인원 (화덕 불 크기)
+]]
+local function publishOccupancy(occupied: { [BasePart]: boolean }, users: number)
+	for _, pad in WorldService.getTreadmillPads() do
+		local now = occupied[pad.part] == true
+		if pad.part:GetAttribute(World.ATTR.occupied) ~= now then
+			pad.part:SetAttribute(World.ATTR.occupied, now)
+		end
+	end
+	local lobby = WorldService.getLobby()
+	if lobby and lobby:GetAttribute(World.ATTR.treadmillUsers) ~= users then
+		lobby:SetAttribute(World.ATTR.treadmillUsers, users)
+	end
+end
+
 local function step(dt: number)
 	if LiveOpsService.isMaintenance() then
+		publishOccupancy({}, 0)
 		return
 	end
+
+	local occupied: { [BasePart]: boolean } = {}
+	local users = 0
 
 	for player, data in DataService.getAllActive() do
 		local pad = padUnder(player)
@@ -93,6 +116,9 @@ local function step(dt: number)
 			continue
 		end
 
+		occupied[pad.part] = true
+		users += 1
+
 		local tier = pad.tier
 		local rest, payouts =
 			TreadmillLogic.advance(progress[player] or 0, dt, tier.intervalSeconds)
@@ -103,6 +129,8 @@ local function step(dt: number)
 		if payouts > 0 then
 			paid = EconomyService.addGold(player, data, payouts * tier.gold, "treadmill")
 			DataService.replicate(player)
+			-- 주변 사람에게도 금화가 튀는 연출이 보이게 지급 시각을 남긴다
+			pad.part:SetAttribute(World.ATTR.paidAt, Workspace:GetServerTimeNow())
 		end
 
 		send(player, {
@@ -113,6 +141,8 @@ local function step(dt: number)
 			paid = paid,
 		})
 	end
+
+	publishOccupancy(occupied, users)
 end
 
 function TreadmillService.Init()

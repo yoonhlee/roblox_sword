@@ -18,6 +18,7 @@ require("./TreadmillLogic.spec")
 require("./DrawLogic.spec")
 require("./VisualLogic.spec")
 require("./UILayout.spec")
+require("./World.spec")
 require("./RateLimiter.spec")
 require("./Locale.spec")
 

@@ -30,6 +30,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Types = require(Shared:WaitForChild("Types"))
@@ -117,6 +118,11 @@ local usedSlots: { [number]: boolean } = {}
 local nextRaceId = 1
 
 local updateRemote: RemoteEvent? = nil
+
+-- 쇳물 관문 바닥 원으로 대기열에 들어온 사람 (원 밖으로 나가면 빠진다)
+local joinedByRing: { [Player]: boolean } = {}
+local RING_CHECK_SECONDS = 0.2
+local lastRingCheck = 0
 
 local function fail(reason: string): Types.Failure
 	return { ok = false, reason = reason }
@@ -206,9 +212,23 @@ end
 -- 대기열
 --------------------------------------------------------------------------------
 
+-- 관문 전광판·고리 연출용 상태 (대기 인원, 출발 예정 시각)
+local function publishGate(secondsLeft: number?)
+	local gate = WorldService.getGate()
+	if gate == nil then
+		return
+	end
+	gate:SetAttribute(World.ATTR.queueCount, #queue)
+	gate:SetAttribute(
+		World.ATTR.departAt,
+		if #queue > 0 and secondsLeft then Workspace:GetServerTimeNow() + secondsLeft else 0
+	)
+end
+
 local function notifyQueue()
 	local waited = os.clock() - queueOpenedAt
 	local secondsLeft = RaceLogic.secondsUntilStart(waited, RaceConfig.MATCH_WINDOW_SECONDS)
+	publishGate(secondsLeft)
 
 	for _, player in queue do
 		send(player, {
@@ -226,6 +246,7 @@ local function removeFromQueue(player: Player): boolean
 		return false
 	end
 	table.remove(queue, index)
+	joinedByRing[player] = nil
 	return true
 end
 
@@ -234,7 +255,8 @@ end
 --------------------------------------------------------------------------------
 
 local function sendToLobby(player: Player)
-	WorldService.teleportToLobby(player)
+	-- 관문 앞으로 돌아온다 (바로 다시 참가하기 쉽게)
+	WorldService.teleportToReturnPoint(player)
 	setWalkSpeed(player, RaceConfig.BASE_SPEED)
 	send(player, { kind = "lobby" })
 end
@@ -612,8 +634,19 @@ local function stepRace(race: Race, now: number)
 	end
 end
 
+-- 관문 바닥 원 확인 (아래 "리모트" 부분에서 정의한다. step 이 먼저 나오므로 이름만 미리 둔다)
+local checkRing: () -> ()
+
 local function step()
 	local now = os.clock()
+
+	if now - lastRingCheck >= RING_CHECK_SECONDS then
+		lastRingCheck = now
+		local ok, err = pcall(checkRing)
+		if not ok then
+			warn(`[RaceService] 관문 원 확인 오류: {err}`)
+		end
+	end
 
 	if
 		RaceLogic.shouldDepart(
@@ -626,6 +659,12 @@ local function step()
 	then
 		local batch = queue
 		queue = {}
+		joinedByRing = {}
+		publishGate(nil)
+		local gate = WorldService.getGate()
+		if gate then
+			gate:SetAttribute(World.ATTR.launchAt, Workspace:GetServerTimeNow())
+		end
 
 		local ok, err = xpcall(startRace, debug.traceback, batch)
 		if not ok then
@@ -656,11 +695,8 @@ end
 -- 리모트
 --------------------------------------------------------------------------------
 
-local function handleJoin(player: Player): Types.SimpleResponse
-	if not limiter:consume(player.UserId) then
-		return fail("too_fast")
-	end
-
+-- 대기열에 넣는다 (버튼과 관문 바닥 원이 같이 쓴다). 레이트 리밋은 부르는 쪽이 한다.
+local function joinQueue(player: Player): Types.SimpleResponse
 	if LiveOpsService.isMaintenance() then
 		return fail("maintenance")
 	end
@@ -689,6 +725,51 @@ local function handleJoin(player: Player): Types.SimpleResponse
 
 	notifyQueue()
 	return { ok = true }
+end
+
+local function handleJoin(player: Player): Types.SimpleResponse
+	if not limiter:consume(player.UserId) then
+		return fail("too_fast")
+	end
+	return joinQueue(player)
+end
+
+--[[
+	쇳물 관문 바닥 원: 올라서면 대기열에 들어가고, 원으로 들어온 사람이 원 밖으로 나가면 빠진다.
+	위치는 서버가 본 캐릭터 위치로 판단한다. 버튼으로 들어온 사람은 원 밖에 있어도 그대로 둔다.
+]]
+function checkRing()
+	local gateSpec = World.GATE
+	if WorldService.getGate() == nil then
+		return
+	end
+
+	for _, player in Players:GetPlayers() do
+		if raceOf[player] ~= nil then
+			continue
+		end
+		local root = rootOf(player)
+		local inside = false
+		if root then
+			local position = root.Position
+			local dx, dz = position.X - gateSpec.ringX, position.Z - gateSpec.ringZ
+			inside = dx * dx + dz * dz <= gateSpec.ringRadius * gateSpec.ringRadius
+				and position.Y >= 0
+				and position.Y <= gateSpec.ringReach
+		end
+
+		local queued = table.find(queue, player) ~= nil
+		if inside and not queued then
+			local response = joinQueue(player)
+			if response.ok then
+				joinedByRing[player] = true
+			end
+		elseif not inside and queued and joinedByRing[player] then
+			removeFromQueue(player)
+			notifyQueue()
+			send(player, { kind = "queue", queued = false })
+		end
+	end
 end
 
 local function handleLeaveQueue(player: Player): Types.SimpleResponse

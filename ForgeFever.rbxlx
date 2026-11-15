@@ -640,6 +640,297 @@ return RaceConfig
         </Item>
         <Item class="ModuleScript" referent="10">
           <Properties>
+            <string name="Name">SwordShapes</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	SwordShapes — 블록으로 짓는 3D 검 모양 (통합 기획서 8-2절).
+
+	숫자 데이터만 둔다. 실제 파트는 shared/SwordModel 이 만든다.
+	좌표(스터드): 손잡이 가운데가 원점, 칼날은 +Y 로 뻗는다. 두께는 Z.
+	부위(role)마다 색이 정해진다.
+	  blade  칼날 바탕 (강철색)
+	  edge   칼날 테두리 (레벨 색 = 쇠 달구는 색, 5강부터 빛남)
+	  core   늘 빛나는 속심 (accent 색, 네온)
+	  guard  손잡이 위 가드 (등급 색)
+	  grip   손잡이 (나무·가죽)
+	  pommel 손잡이 끝 (등급 색)
+	  accent 장식 (accent 색)
+	shape: "Block" | "Wedge" | "Ball" | "Cylinder". rot 은 도(°) 단위 X·Y·Z 회전.
+
+	새 검을 추가하면 여기에 모양을 넣는다. 없으면 DEFAULT(무쇠 검 모양)로 보인다.
+]]
+
+export type PartSpec = {
+	role: string,
+	shape: string,
+	size: { number },
+	pos: { number },
+	rot: { number }?,
+}
+
+export type Shape = {
+	accent: { number }?, -- core·accent 부위 색 (없으면 레벨 색)
+	parts: { PartSpec },
+}
+
+local SwordShapes = {}
+
+-- 공통 손잡이 (가드는 검마다 다르다)
+local function grip(length: number): { PartSpec }
+	return {
+		{
+			role = "grip",
+			shape = "Cylinder",
+			size = { length, 0.32, 0.32 },
+			pos = { 0, 0, 0 },
+			rot = { 0, 0, 90 },
+		},
+		{
+			role = "pommel",
+			shape = "Ball",
+			size = { 0.5, 0.5, 0.5 },
+			pos = { 0, -length / 2 - 0.15, 0 },
+		},
+	}
+end
+
+local function concat(...: { PartSpec }): { PartSpec }
+	local result: { PartSpec } = {}
+	for _, list in { ... } do
+		for _, part in list do
+			table.insert(result, part)
+		end
+	end
+	return result
+end
+
+SwordShapes.List = {
+	-- 무쇠 검: 곧은 외날, 장식 없음
+	ironBlade = {
+		parts = concat(grip(1.1), {
+			{ role = "guard", shape = "Block", size = { 1.5, 0.22, 0.4 }, pos = { 0, 0.66, 0 } },
+			{ role = "blade", shape = "Block", size = { 0.42, 3.1, 0.1 }, pos = { 0, 2.32, 0 } },
+			{ role = "edge", shape = "Block", size = { 0.06, 3.1, 0.12 }, pos = { 0.24, 2.32, 0 } },
+			{
+				role = "edge",
+				shape = "Block",
+				size = { 0.06, 3.1, 0.12 },
+				pos = { -0.24, 2.32, 0 },
+			},
+			{
+				role = "blade",
+				shape = "Wedge",
+				size = { 0.1, 0.5, 0.42 },
+				pos = { 0, 4.12, 0 },
+				rot = { 0, 90, 0 },
+			},
+		}),
+	},
+
+	-- 잉걸불 검: 톱니 같은 숯 모서리, 속심이 늘 주황
+	emberEdge = {
+		accent = { 255, 138, 42 },
+		parts = concat(grip(1.1), {
+			{ role = "guard", shape = "Block", size = { 1.4, 0.26, 0.42 }, pos = { 0, 0.66, 0 } },
+			{ role = "blade", shape = "Block", size = { 0.5, 3.0, 0.12 }, pos = { 0, 2.28, 0 } },
+			{ role = "core", shape = "Block", size = { 0.1, 2.8, 0.14 }, pos = { 0, 2.28, 0 } },
+			{
+				role = "edge",
+				shape = "Wedge",
+				size = { 0.12, 0.5, 0.22 },
+				pos = { 0.34, 1.4, 0 },
+				rot = { 0, 90, 0 },
+			},
+			{
+				role = "edge",
+				shape = "Wedge",
+				size = { 0.12, 0.5, 0.22 },
+				pos = { 0.34, 2.1, 0 },
+				rot = { 0, 90, 0 },
+			},
+			{
+				role = "edge",
+				shape = "Wedge",
+				size = { 0.12, 0.5, 0.22 },
+				pos = { 0.34, 2.8, 0 },
+				rot = { 0, 90, 0 },
+			},
+			{
+				role = "edge",
+				shape = "Wedge",
+				size = { 0.12, 0.5, 0.22 },
+				pos = { -0.34, 1.75, 0 },
+				rot = { 0, -90, 0 },
+			},
+			{
+				role = "edge",
+				shape = "Wedge",
+				size = { 0.12, 0.5, 0.22 },
+				pos = { -0.34, 2.45, 0 },
+				rot = { 0, -90, 0 },
+			},
+			{
+				role = "blade",
+				shape = "Wedge",
+				size = { 0.12, 0.6, 0.5 },
+				pos = { 0, 4.08, 0 },
+				rot = { 0, 90, 0 },
+			},
+		}),
+	},
+
+	-- 물결 송곳니: 물결처럼 휜 날(세 마디), 끝이 송곳니
+	tideFang = {
+		accent = { 140, 210, 255 },
+		parts = concat(grip(1.1), {
+			{ role = "guard", shape = "Block", size = { 1.3, 0.22, 0.4 }, pos = { 0, 0.66, 0 } },
+			{
+				role = "blade",
+				shape = "Block",
+				size = { 0.44, 1.1, 0.1 },
+				pos = { 0.04, 1.3, 0 },
+				rot = { 0, 0, -6 },
+			},
+			{
+				role = "blade",
+				shape = "Block",
+				size = { 0.44, 1.1, 0.1 },
+				pos = { -0.02, 2.3, 0 },
+				rot = { 0, 0, 8 },
+			},
+			{
+				role = "blade",
+				shape = "Block",
+				size = { 0.42, 1.1, 0.1 },
+				pos = { 0.05, 3.28, 0 },
+				rot = { 0, 0, -8 },
+			},
+			{ role = "edge", shape = "Block", size = { 0.06, 3.2, 0.12 }, pos = { 0.27, 2.3, 0 } },
+			{
+				role = "accent",
+				shape = "Block",
+				size = { 0.08, 2.6, 0.12 },
+				pos = { -0.18, 2.3, 0 },
+			},
+			{
+				role = "blade",
+				shape = "Wedge",
+				size = { 0.1, 0.7, 0.42 },
+				pos = { 0.1, 4.18, 0 },
+				rot = { 0, 90, -12 },
+			},
+		}),
+	},
+
+	-- 폭풍 바늘: 아주 가는 찌르기 검, 둥근 가드, 잔 번개 무늬
+	stormNeedle = {
+		accent = { 201, 162, 255 },
+		parts = concat(grip(1.2), {
+			{
+				role = "guard",
+				shape = "Cylinder",
+				size = { 0.16, 1.1, 1.1 },
+				pos = { 0, 0.7, 0 },
+				rot = { 0, 0, 90 },
+			},
+			{ role = "blade", shape = "Block", size = { 0.12, 3.6, 0.12 }, pos = { 0, 2.6, 0 } },
+			{ role = "edge", shape = "Block", size = { 0.04, 3.6, 0.14 }, pos = { 0.07, 2.6, 0 } },
+			{
+				role = "accent",
+				shape = "Block",
+				size = { 0.05, 0.6, 0.15 },
+				pos = { 0, 1.6, 0 },
+				rot = { 0, 0, 25 },
+			},
+			{
+				role = "accent",
+				shape = "Block",
+				size = { 0.05, 0.6, 0.15 },
+				pos = { 0, 2.6, 0 },
+				rot = { 0, 0, -25 },
+			},
+			{
+				role = "accent",
+				shape = "Block",
+				size = { 0.05, 0.6, 0.15 },
+				pos = { 0, 3.6, 0 },
+				rot = { 0, 0, 25 },
+			},
+			{
+				role = "blade",
+				shape = "Wedge",
+				size = { 0.12, 0.5, 0.12 },
+				pos = { 0, 4.65, 0 },
+				rot = { 0, 90, 0 },
+			},
+		}),
+	},
+
+	-- 새벽가르기: 넓은 대검, 금빛 날개 가드
+	dawnbreaker = {
+		accent = { 255, 244, 200 },
+		parts = concat(grip(1.4), {
+			{ role = "guard", shape = "Block", size = { 1.1, 0.3, 0.46 }, pos = { 0, 0.82, 0 } },
+			{
+				role = "guard",
+				shape = "Wedge",
+				size = { 0.46, 0.7, 0.6 },
+				pos = { 0.85, 0.95, 0 },
+				rot = { 0, 90, -30 },
+			},
+			{
+				role = "guard",
+				shape = "Wedge",
+				size = { 0.46, 0.7, 0.6 },
+				pos = { -0.85, 0.95, 0 },
+				rot = { 0, -90, 30 },
+			},
+			{ role = "blade", shape = "Block", size = { 0.9, 3.4, 0.14 }, pos = { 0, 2.67, 0 } },
+			{ role = "edge", shape = "Block", size = { 0.08, 3.4, 0.16 }, pos = { 0.47, 2.67, 0 } },
+			{
+				role = "edge",
+				shape = "Block",
+				size = { 0.08, 3.4, 0.16 },
+				pos = { -0.47, 2.67, 0 },
+			},
+			{ role = "core", shape = "Block", size = { 0.14, 3.0, 0.18 }, pos = { 0, 2.6, 0 } },
+			{
+				role = "blade",
+				shape = "Wedge",
+				size = { 0.14, 0.9, 0.9 },
+				pos = { 0, 4.82, 0 },
+				rot = { 0, 90, 0 },
+			},
+			{ role = "accent", shape = "Ball", size = { 0.4, 0.4, 0.4 }, pos = { 0, -0.95, 0 } },
+		}),
+	},
+} :: { [string]: Shape }
+
+SwordShapes.DEFAULT = SwordShapes.List.ironBlade
+
+SwordShapes.ROLES = { "blade", "edge", "core", "guard", "grip", "pommel", "accent" }
+SwordShapes.SHAPES = { "Block", "Wedge", "Ball", "Cylinder" }
+
+function SwordShapes.get(id: string): Shape
+	return SwordShapes.List[id] or SwordShapes.DEFAULT
+end
+
+-- 손에 쥐는 위치(원점)에서 칼끝까지 대략 길이 (미리보기 카메라 거리 계산용)
+function SwordShapes.length(shape: Shape): number
+	local top, bottom = 0, 0
+	for _, part in shape.parts do
+		top = math.max(top, part.pos[2] + part.size[2] / 2)
+		bottom = math.min(bottom, part.pos[2] - part.size[2] / 2)
+	end
+	return top - bottom
+end
+
+return SwordShapes
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="11">
+          <Properties>
             <string name="Name">VisualConfig</string>
             <string name="Source"><![CDATA[--!strict
 --[[
@@ -714,7 +1005,7 @@ return VisualConfig
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="11">
+        <Item class="ModuleScript" referent="12">
           <Properties>
             <string name="Name">Weapons</string>
             <string name="Source"><![CDATA[--!strict
@@ -817,18 +1108,18 @@ return Weapons
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="12">
+        <Item class="ModuleScript" referent="13">
           <Properties>
             <string name="Name">World</string>
             <string name="Source"><![CDATA[--!strict
 --[[
-	World — 로비와 경주 코스를 코드로 지을 때 쓰는 위치·크기 (전부 [기술] 값).
+	World — 불씨 광장(로비)과 쇳물 수로(코스)를 블록으로 지을 때 쓰는 위치·크기 (통합 기획서 8-2절).
 
-	밸런스 수치가 아니다. 미술 에셋이 없어서 블록으로만 짓는다(통합 기획서 10-3절).
-	나중에 Studio 에서 직접 꾸민 로비로 바꾸면 이 파일의 LOBBY 부분은 필요 없어진다.
-
-	좌표: 로비 바닥 윗면이 y = 0. 경주 코스는 로비 앞(+Z)쪽에서 시작해 +Z 방향으로 달린다.
-	Roblox 타입(Vector3 등)을 쓰지 않고 숫자만 둔다(다른 Config 처럼 Studio 밖에서도 읽을 수 있게).
+	밸런스 수치가 아니라 [기술]·[추천치] 값이다. 미술 에셋 없이 기본 블록·재질·효과로 짓는다.
+	좌표: 로비 바닥 윗면이 y = 0, 원점이 광장 가운데. 북쪽(+Z)이 코스 방향.
+	코스는 로비 북쪽 멀리(+Z)에서 시작해 +Z 로 달린다.
+	Roblox 타입(Vector3 등)을 쓰지 않고 숫자만 둔다(Studio 밖 테스트에서도 읽을 수 있게).
+	색은 Config/Palette 의 WORLD 에 있다.
 ]]
 
 local World = {}
@@ -837,28 +1128,130 @@ World.LOBBY = {
 	sizeX = 120,
 	sizeZ = 120,
 	floorThickness = 2,
-	wallHeight = 24, -- 보이지 않는 벽 (밖으로 떨어지지 않게)
+	wallHeight = 24, -- 보이지 않는 벽 높이 (밖으로 떨어지지 않게)
+	stoneWallHeight = 2.5, -- 보이는 낮은 돌담
 	spawnX = 0,
-	spawnZ = -20,
-	spawnSize = 14,
-	spawnScatter = 5, -- 로비로 돌려보낼 때 이 범위 안에 흩어 놓는다
+	spawnZ = -30,
+	spawnSize = 22, -- 스폰 원판 지름
+	spawnScatter = 5,
+}
+
+-- 경주에서 돌아오는 자리: 관문 앞 (스폰이 아니라 다시 참가하기 쉬운 곳)
+World.RETURN_POINT = { x = 12, z = 28, scatter = 4 }
+
+-- 모루 영감의 대장간 (앞이 트인 건물, 남쪽을 향함)
+World.FORGE = {
+	x = 0,
+	z = 8,
+	sizeX = 32,
+	sizeZ = 20,
+	postHeight = 13,
+	furnace = { x = 9, z = 14, sizeX = 8, sizeY = 6, sizeZ = 6 },
+	chimney = { x = 9, z = 15, size = 3, height = 22 },
+	anvil = { x = -1, z = 2 },
+	npc = { x = -6, z = 3 },
+	promptDistance = 10, -- 모루에서 이 거리 안이면 "강화하기" 버튼
+}
+
+-- 쇳물 관문 (경주 참가)
+World.GATE = {
+	x = 0,
+	z = 54, -- 기둥이 서는 줄
+	width = 22, -- 기둥 사이 바깥 폭
+	pillarSize = 4,
+	pillarHeight = 18,
+	ringX = 0,
+	ringZ = 42, -- 바닥 원 가운데
+	ringRadius = 8,
+	ringSegments = 12,
+	ringReach = 10, -- 원 위로 이 높이 안이면 "올라섰다"
 }
 
 --[[
-	트레드밀 발판. 수입(몇 초에 몇 골드)은 EconomyConfig.TREADMILL_TIERS 에 있다.
+	풀무 러닝머신 발판. 수입(몇 초에 몇 골드)은 EconomyConfig.TREADMILL_TIERS 에 있다.
 	tierId 가 같은 발판은 같은 수입을 준다. 한 발판에 여러 명이 올라가도 된다.
+	[미정 D18] 2단계 이상은 이 줄 북쪽에 자리만 비워 둔다.
 ]]
 World.TREADMILL_PADS = {
-	{ tierId = "tier1", x = -44, z = -36 },
-	{ tierId = "tier1", x = -44, z = -12 },
-	{ tierId = "tier1", x = -44, z = 12 },
-	{ tierId = "tier1", x = -44, z = 36 },
+	{ tierId = "tier1", x = -51, z = -36 },
+	{ tierId = "tier1", x = -51, z = -14 },
+	{ tierId = "tier1", x = -51, z = 8 },
+	{ tierId = "tier1", x = -51, z = 30 },
 }
 World.TREADMILL_PAD = {
-	sizeX = 12,
-	sizeZ = 18,
-	height = 0.6, -- 발판 두께 (바닥 위로 올라온 높이)
-	reach = 12, -- 발판 위로 이 높이까지 "올라가 있다"로 본다 (점프 포함)
+	sizeX = 10,
+	sizeZ = 16,
+	height = 1.2, -- 받침 높이 (바닥 위로 올라온 높이)
+	reach = 12, -- 발판 윗면에서 이 높이까지 "올라가 있다"로 본다 (점프 포함)
+	bellowsOffsetX = 8, -- 풀무는 발판 동쪽에
+	stripes = 8, -- 벨트 줄무늬 수
+}
+
+World.RANKING_WALL = { x = 56, z = 0, width = 20, height = 12 } -- 동쪽 담, 서쪽을 바라봄
+World.SHOWCASE = { x = 41, z = -39 }
+
+-- 담 위 횃불 (모서리 4 + 남북 담 4)
+World.TORCHES = {
+	{ x = -58, z = -58 },
+	{ x = 58, z = -58 },
+	{ x = -58, z = 58 },
+	{ x = 58, z = 58 },
+	{ x = -20, z = -58 },
+	{ x = 20, z = -58 },
+	{ x = -28, z = 58 },
+	{ x = 28, z = 58 },
+}
+
+-- 돌길 (가운데 선 x1,z1 → x2,z2, 폭)
+World.PATHS = {
+	{ x1 = 0, z1 = -30, x2 = 0, z2 = 36, width = 6 }, -- 스폰 → 관문
+	{ x1 = 0, z1 = -14, x2 = -44, z2 = -14, width = 5 }, -- → 러닝머신
+	{ x1 = 0, z1 = -14, x2 = 50, z2 = -14, width = 5 }, -- → 명예의 벽
+	{ x1 = 30, z1 = -14, x2 = 41, z2 = -33, width = 4 }, -- → 진열대
+}
+
+-- 길 끝 표지판 (글자는 각자 언어로 클라이언트가 붙인다)
+-- facing: 표지판 앞면이 바라보는 방향(도). 0 = 남쪽(스폰 쪽), -90 = 동쪽, 90 = 서쪽
+World.SIGNS = {
+	{ x = 6, z = 30, key = "world.sign.gate", facing = 0 },
+	{ x = -38, z = -9, key = "world.sign.treadmill", facing = -90 },
+	{ x = 44, z = -9, key = "world.sign.honor", facing = 90 },
+}
+
+-- 풀무에서 대장간 화덕까지 이어지는 쇠 관이 지나는 줄
+World.PIPE = {
+	mainX = -30, -- 러닝머신 줄 옆을 남북으로 지나는 관
+	feedZ = 14, -- 이 줄에서 동쪽으로 꺾어 대장간 서쪽 벽까지
+	height = 0.4,
+	diameter = 0.6,
+}
+
+--[[
+	padIndex 번째 러닝머신의 풀무에서 화덕까지 관이 지나는 점들 (x, z). 불씨 구슬이 이 길을 따라 굴러간다.
+	서버(관 짓기)와 클라이언트(불씨 연출)가 같은 함수를 쓴다.
+]]
+function World.pipePath(padIndex: number): { { number } }
+	local pad = World.TREADMILL_PADS[padIndex]
+	if pad == nil then
+		return {}
+	end
+	local startX = pad.x + World.TREADMILL_PAD.bellowsOffsetX
+	local forgeWest = World.FORGE.x - World.FORGE.sizeX / 2
+	return {
+		{ startX, pad.z },
+		{ World.PIPE.mainX, pad.z },
+		{ World.PIPE.mainX, World.PIPE.feedZ },
+		{ forgeWest, World.PIPE.feedZ },
+	}
+end
+
+-- 담 밖 산 실루엣 (부딪히지 않는다)
+World.MOUNTAINS = {
+	{ x = -170, z = 210, width = 160, height = 90 },
+	{ x = 40, z = 260, width = 220, height = 120 },
+	{ x = 230, z = 180, width = 160, height = 80 },
+	{ x = -240, z = -60, width = 180, height = 70 },
+	{ x = 240, z = -90, width = 170, height = 75 },
 }
 
 World.COURSE = {
@@ -866,10 +1259,12 @@ World.COURSE = {
 	slotSpacing = 90, -- 동시에 열리는 경주끼리 옆으로 떨어진 거리
 	floorThickness = 2,
 	segmentLength = 200, -- 바닥을 이 길이로 끊어서 만든다
-	wallHeight = 18,
+	wallHeight = 18, -- 보이지 않는 벽 포함 높이
+	solidWallHeight = 6, -- 보이는 돌벽 높이
 	wallThickness = 2,
 	backExtra = 30, -- 추격자 출발 위치보다 뒤로 더 까는 바닥
-	markerEvery = 100, -- 이 간격마다 바닥에 거리 표시 줄
+	markerEvery = 100, -- 이 간격마다 거리 문양 띠와 숫자판
+	archEvery = 500, -- 이 간격마다 화로 아치
 	blockHeight = 9,
 	blockDepth = 4,
 	hurdleHeight = 3, -- 걸어서는 못 넘고 점프(기본 약 7칸)로 넘는 높이
@@ -879,12 +1274,13 @@ World.COURSE = {
 	chaserHeight = 40,
 	chaserDepth = 6,
 	spawnHeight = 3, -- 캐릭터를 놓을 때 바닥에서 띄우는 높이
+	startBars = 9, -- 출발선 쇠창살 수
 }
 
 -- 캐릭터끼리 부딪치지 않게 하는 충돌 그룹 이름
 World.CHARACTER_COLLISION_GROUP = "ForgeCharacters"
 
--- Workspace 아래 폴더 이름 (클라이언트도 이 이름으로 찾는다)
+-- Workspace 아래 이름 (클라이언트도 이 이름으로 찾는다)
 World.LOBBY_FOLDER = "Lobby"
 World.TREADMILL_FOLDER = "Treadmills"
 World.RACES_FOLDER = "Races"
@@ -892,12 +1288,26 @@ World.RACE_FOLDER_PREFIX = "Race_"
 World.CHASER_NAME = "Chaser"
 World.TREADMILL_TIER_ATTRIBUTE = "TreadmillTier"
 
+-- 서버가 세계 물체에 다는 속성 이름 (클라이언트가 이것을 보고 연출한다)
+World.ATTR = {
+	treadmillUsers = "TreadmillUsers", -- Lobby 폴더: 러닝머신 위 인원
+	occupied = "Occupied", -- 발판: 누가 올라서 있는지
+	paidAt = "PaidAt", -- 발판: 마지막 지급 시각 (서버 시간)
+	queueCount = "QueueCount", -- 관문: 대기 인원
+	departAt = "DepartAt", -- 관문: 출발 예정 시각 (서버 시간, 대기 없으면 0)
+	launchAt = "LaunchAt", -- 관문: 마지막 출발 시각
+	signKey = "SignKey", -- 표지판: Locale 키
+	ownerName = "OwnerName", -- 진열대
+	swordId = "SwordId",
+	swordLevel = "SwordLevel",
+}
+
 return World
 ]]></string>
           </Properties>
         </Item>
       </Item>
-      <Item class="ModuleScript" referent="13">
+      <Item class="ModuleScript" referent="14">
         <Properties>
           <string name="Name">Locale</string>
           <string name="Source"><![CDATA[--!strict
@@ -993,9 +1403,9 @@ Locale.Strings = {
 		["ui.race.match"] = "경주 매칭",
 		["ui.race.cancel"] = "대기 취소",
 		["ui.race.queue"] = "출발까지 %d초 · 대기 %d명",
-		["ui.treadmill.label"] = "트레드밀 · %d초마다 %s 골드",
-		["ui.treadmill.progress"] = "트레드밀 %d/%d초 · %s 골드",
-		["ui.treadmill.paid"] = "트레드밀 수입 +%s 골드",
+		["ui.treadmill.label"] = "풀무 러닝머신 · %d초마다 %s 골드",
+		["ui.treadmill.progress"] = "풀무 러닝머신 %d/%d초 · %s 골드",
+		["ui.treadmill.paid"] = "러닝머신 수입 +%s 골드",
 		["ui.race.go"] = "출발!",
 		["ui.race.distance"] = "거리 %s / %s칸",
 		["ui.race.distanceOnly"] = "거리 %s칸",
@@ -1035,6 +1445,22 @@ Locale.Strings = {
 		["shop.buy"] = "Robux 로 사기",
 		["shop.pityShort"] = "천장 %d/%d",
 		["shop.promise"] = "상품이 열리면 모든 확률을 사기 전에 이 화면에 공개한다.",
+		-- 불씨 광장 · 쇳물 수로 (P45)
+		["world.sign.gate"] = "쇳물 관문 · 경주",
+		["world.sign.treadmill"] = "풀무 러닝머신",
+		["world.sign.honor"] = "명예의 벽",
+		["world.prompt.forge"] = "강화하기",
+		["world.prompt.object"] = "모루 영감",
+		["world.board.idle"] = "쇳물 수로 · 원에 올라서면 경주 대기",
+		["world.board.queue"] = "다음 출발 %d초 · %d/%d명",
+		["world.honor.title"] = "명예의 벽 · 최고 강화",
+		["world.honor.empty"] = "아직 기록이 없다.",
+		["world.showcase.title"] = "이 서버 최고",
+		["world.showcase.line"] = "%s · %s +%d",
+		["world.showcase.empty"] = "아직 아무도 없다.",
+		["npc.shout.high"] = "%s 녀석이 %s +%d 를 뽑아냈군!",
+		["npc.shout.max"] = "%s 녀석, %s 를 끝까지 달궜다! +20!",
+		["npc.shout.record"] = "새 주인이 나타났군.",
 		["ui.shop"] = "상점",
 		["ui.shopTitle"] = "상점",
 		["ui.shopEmpty"] = "아직 상품이 등록되지 않았다.",
@@ -1174,7 +1600,7 @@ Locale.Strings = {
 		["ui.race.match"] = "Race",
 		["ui.race.cancel"] = "Leave queue",
 		["ui.race.queue"] = "Starts in %ds · %d waiting",
-		["ui.treadmill.label"] = "Treadmill · every %ds, %s gold",
+		["ui.treadmill.label"] = "Bellows treadmill · every %ds, %s gold",
 		["ui.treadmill.progress"] = "Treadmill %d/%ds · %s gold",
 		["ui.treadmill.paid"] = "Treadmill income +%s gold",
 		["ui.race.go"] = "Go!",
@@ -1215,6 +1641,21 @@ Locale.Strings = {
 		["shop.buy"] = "Buy with Robux",
 		["shop.pityShort"] = "Pity %d/%d",
 		["shop.promise"] = "When items open, every chance is shown here before you buy.",
+		["world.sign.gate"] = "Molten Gate · Race",
+		["world.sign.treadmill"] = "Bellows Treadmills",
+		["world.sign.honor"] = "Wall of Honor",
+		["world.prompt.forge"] = "Forge",
+		["world.prompt.object"] = "Old Anvil",
+		["world.board.idle"] = "Molten Run · step in the ring to race",
+		["world.board.queue"] = "Next start %ds · %d/%d racers",
+		["world.honor.title"] = "Wall of Honor · Top level",
+		["world.honor.empty"] = "No records yet.",
+		["world.showcase.title"] = "Best on this server",
+		["world.showcase.line"] = "%s · %s +%d",
+		["world.showcase.empty"] = "Nobody yet.",
+		["npc.shout.high"] = "%s pulled off %s +%d!",
+		["npc.shout.max"] = "%s took %s all the way! +20!",
+		["npc.shout.record"] = "A new owner. Hmph.",
 		["ui.shop"] = "Shop",
 		["ui.shopTitle"] = "Shop",
 		["ui.shopEmpty"] = "No items yet.",
@@ -1318,11 +1759,11 @@ return Locale
 ]]></string>
         </Properties>
       </Item>
-      <Item class="Folder" referent="14">
+      <Item class="Folder" referent="15">
         <Properties>
           <string name="Name">Pure</string>
         </Properties>
-        <Item class="ModuleScript" referent="15">
+        <Item class="ModuleScript" referent="16">
           <Properties>
             <string name="Name">DataMigration</string>
             <string name="Source"><![CDATA[--!strict
@@ -1503,7 +1944,7 @@ return DataMigration
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="16">
+        <Item class="ModuleScript" referent="17">
           <Properties>
             <string name="Name">DrawLogic</string>
             <string name="Source"><![CDATA[--!strict
@@ -1657,7 +2098,7 @@ return DrawLogic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="17">
+        <Item class="ModuleScript" referent="18">
           <Properties>
             <string name="Name">EnhanceLogic</string>
             <string name="Source"><![CDATA[--!strict
@@ -1818,7 +2259,7 @@ return EnhanceLogic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="18">
+        <Item class="ModuleScript" referent="19">
           <Properties>
             <string name="Name">Format</string>
             <string name="Source"><![CDATA[--!strict
@@ -1942,7 +2383,7 @@ return Format
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="19">
+        <Item class="ModuleScript" referent="20">
           <Properties>
             <string name="Name">RaceLogic</string>
             <string name="Source"><![CDATA[--!strict
@@ -2261,7 +2702,7 @@ return RaceLogic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="20">
+        <Item class="ModuleScript" referent="21">
           <Properties>
             <string name="Name">SwordLogic</string>
             <string name="Source"><![CDATA[--!strict
@@ -2456,7 +2897,7 @@ return SwordLogic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="21">
+        <Item class="ModuleScript" referent="22">
           <Properties>
             <string name="Name">TreadmillLogic</string>
             <string name="Source"><![CDATA[--!strict
@@ -2509,7 +2950,7 @@ return TreadmillLogic
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="22">
+        <Item class="ModuleScript" referent="23">
           <Properties>
             <string name="Name">UILayout</string>
             <string name="Source"><![CDATA[--!strict
@@ -2747,7 +3188,7 @@ return UILayout
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="23">
+        <Item class="ModuleScript" referent="24">
           <Properties>
             <string name="Name">VisualLogic</string>
             <string name="Source"><![CDATA[--!strict
@@ -2817,7 +3258,7 @@ return VisualLogic
           </Properties>
         </Item>
       </Item>
-      <Item class="ModuleScript" referent="24">
+      <Item class="ModuleScript" referent="25">
         <Properties>
           <string name="Name">Remotes</string>
           <string name="Source"><![CDATA[--!strict
@@ -2858,6 +3299,7 @@ Remotes.Events = {
 	LiveOpsChanged = "LiveOpsChanged", -- 이벤트/점검 상태 변경
 	RaceUpdate = "RaceUpdate", -- 경주 진행 알림 (Types.RaceUpdate)
 	TreadmillUpdate = "TreadmillUpdate", -- 트레드밀 진행 상태 (Types.TreadmillUpdate)
+	WorldEvent = "WorldEvent", -- 세계에서 일어난 일 (예: 모루 근접 버튼 → 대장간 열기)
 }
 
 -- 서버 전용: 리모트 폴더와 인스턴스를 생성한다.
@@ -2896,7 +3338,182 @@ return Remotes
 ]]></string>
         </Properties>
       </Item>
-      <Item class="ModuleScript" referent="25">
+      <Item class="ModuleScript" referent="26">
+        <Properties>
+          <string name="Name">SwordModel</string>
+          <string name="Source"><![CDATA[--!strict
+--[[
+	SwordModel — 블록으로 3D 검을 짓는다 (통합 기획서 8-2절).
+
+	모양은 Config/SwordShapes(숫자 데이터), 색은 Config/Palette 에서 온다.
+	  칼날 바탕 = 강철색 금속 / 테두리 = 레벨 색(쇠 달구는 색, 5강부터 네온으로 빛남) /
+	  가드·손잡이 끝 = 등급 색 / 속심·장식 = 검마다 정한 색(네온)
+	  레벨이 높을수록 칼날 주위 빛이 커지고, 15강부터 불티, 20강은 하얀 불꽃.
+	서버(손에 든 검, 진열대)와 클라이언트(대장간 화면 미리보기)가 같은 함수를 쓴다.
+	보기만 하는 장식이라 부딪히지도, 무게도, 클릭 판정도 없다.
+]]
+
+local Config = script.Parent:WaitForChild("Config")
+local Palette = require(Config:WaitForChild("Palette"))
+local SwordShapes = require(Config:WaitForChild("SwordShapes"))
+local Weapons = require(Config:WaitForChild("Weapons"))
+local VisualLogic = require(script.Parent:WaitForChild("Pure"):WaitForChild("VisualLogic"))
+
+local SwordModel = {}
+
+SwordModel.MODEL_NAME = "ForgeSword"
+SwordModel.HANDLE_NAME = "Handle"
+
+local function rgb(values: { number }): Color3
+	return Color3.fromRGB(values[1], values[2], values[3])
+end
+
+local SHAPE_TYPES: { [string]: Enum.PartType } = {
+	Block = Enum.PartType.Block,
+	Wedge = Enum.PartType.Wedge,
+	Ball = Enum.PartType.Ball,
+	Cylinder = Enum.PartType.Cylinder,
+}
+
+export type Options = {
+	cframe: CFrame, -- 손잡이 가운데가 놓일 자리 (칼날은 이 CFrame 의 +Y 쪽)
+	scale: number?, -- 크기 배율 (손에 들 때는 작게)
+	anchored: boolean?, -- true 면 고정(진열대·미리보기), false 면 손잡이에 용접(손에 들 때)
+	effects: boolean?, -- 빛·불티·불꽃을 붙일지 (미리보기 화면에서는 빛이 안 보이므로 끈다)
+}
+
+--[[
+	검 모델을 만든다. 부모는 정하지 않는다(호출한 쪽이 붙인다).
+	PrimaryPart 는 손잡이(Handle).
+]]
+function SwordModel.build(swordId: string, level: number, options: Options): Model
+	local shape = SwordShapes.get(swordId)
+	local info = Weapons.get(swordId)
+	local rarityColor =
+		rgb(Palette.RARITY[if info then info.rarity else "common"] or Palette.RARITY.common)
+	local tier = VisualLogic.heatTier(level, Palette.HEAT_TIERS)
+	local heatColor = rgb(tier.rgb)
+	local accentColor = if shape.accent then rgb(shape.accent) else heatColor
+	local scale = options.scale or 1
+	local anchored = options.anchored == true
+
+	local model = Instance.new("Model")
+	model.Name = SwordModel.MODEL_NAME
+	model:SetAttribute("SwordId", swordId)
+	model:SetAttribute("SwordLevel", level)
+
+	local handle: BasePart? = nil
+	local glowPart: BasePart? = nil
+
+	for index, spec in shape.parts do
+		local part = Instance.new("Part")
+		part.Name = if spec.role == "grip" and handle == nil
+			then SwordModel.HANDLE_NAME
+			else `{spec.role}{index}`
+		part.Shape = SHAPE_TYPES[spec.shape] or Enum.PartType.Block
+		part.Size = Vector3.new(spec.size[1], spec.size[2], spec.size[3]) * scale
+		part.Anchored = anchored
+		part.CanCollide = false
+		part.CanQuery = false
+		part.CanTouch = false
+		part.Massless = true
+		part.CastShadow = false
+		part.TopSurface = Enum.SurfaceType.Smooth
+		part.BottomSurface = Enum.SurfaceType.Smooth
+
+		local role = spec.role
+		if role == "blade" then
+			part.Color = rgb(Palette.WORLD.steel)
+			part.Material = Enum.Material.Metal
+			if glowPart == nil then
+				glowPart = part
+			end
+		elseif role == "edge" then
+			part.Color = heatColor
+			part.Material = if tier.glow > 0 then Enum.Material.Neon else Enum.Material.Metal
+		elseif role == "core" or role == "accent" then
+			part.Color = accentColor
+			part.Material = Enum.Material.Neon
+		elseif role == "guard" or role == "pommel" then
+			part.Color = rarityColor
+			part.Material = Enum.Material.Metal
+		else -- grip
+			part.Color = rgb(Palette.WORLD.wood)
+			part.Material = Enum.Material.Wood
+		end
+
+		local rot = spec.rot or { 0, 0, 0 }
+		part.CFrame = options.cframe
+			* CFrame.new(spec.pos[1] * scale, spec.pos[2] * scale, spec.pos[3] * scale)
+			* CFrame.Angles(math.rad(rot[1]), math.rad(rot[2]), math.rad(rot[3]))
+		part.Parent = model
+
+		if part.Name == SwordModel.HANDLE_NAME then
+			handle = part
+		end
+	end
+
+	local primary = handle or model:FindFirstChildWhichIsA("BasePart")
+	model.PrimaryPart = primary
+
+	-- 손에 들 때: 모든 조각을 손잡이에 붙인다
+	if not anchored and primary then
+		for _, child in model:GetChildren() do
+			if child:IsA("BasePart") and child ~= primary then
+				local weld = Instance.new("WeldConstraint")
+				weld.Part0 = primary
+				weld.Part1 = child
+				weld.Parent = child
+			end
+		end
+	end
+
+	-- 레벨이 높을수록 빛, 15강부터 불티, 20강은 하얀 불꽃
+	local glow = glowPart
+	if options.effects ~= false and glow and tier.glow > 0 then
+		local light = Instance.new("PointLight")
+		light.Color = heatColor
+		light.Range = (4 + 8 * tier.glow) * scale
+		light.Brightness = 0.6 + 1.6 * tier.glow
+		light.Parent = glow
+
+		if tier.sparks then
+			local sparks = Instance.new("ParticleEmitter")
+			sparks.Name = "Sparks"
+			sparks.Color = ColorSequence.new(heatColor)
+			sparks.LightEmission = 1
+			sparks.Rate = 6
+			sparks.Lifetime = NumberRange.new(0.4, 0.8)
+			sparks.Speed = NumberRange.new(1, 3)
+			sparks.SpreadAngle = Vector2.new(60, 60)
+			sparks.Size = NumberSequence.new(0.12 * scale, 0)
+			sparks.Parent = glow
+		end
+
+		local whiteTier = Palette.HEAT_TIERS[#Palette.HEAT_TIERS]
+		if level >= whiteTier.minLevel then
+			local fire = Instance.new("Fire")
+			fire.Color = Color3.new(1, 1, 1)
+			fire.SecondaryColor = rgb(Palette.WORLD.gold)
+			fire.Size = 2 * scale
+			fire.Heat = 3
+			fire.Parent = glow
+		end
+	end
+
+	return model
+end
+
+-- 모양 길이 (미리보기 카메라 거리용)
+function SwordModel.length(swordId: string): number
+	return SwordShapes.length(SwordShapes.get(swordId))
+end
+
+return SwordModel
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="ModuleScript" referent="27">
         <Properties>
           <string name="Name">Types</string>
           <string name="Source"><![CDATA[--!strict
@@ -3170,11 +3787,11 @@ return Types
       </Item>
     </Item>
   </Item>
-  <Item class="ServerScriptService" referent="26">
+  <Item class="ServerScriptService" referent="28">
     <Properties>
       <string name="Name">ServerScriptService</string>
     </Properties>
-    <Item class="Script" referent="27">
+    <Item class="Script" referent="29">
       <Properties>
         <string name="Name">Server</string>
         <token name="RunContext">0</token>
@@ -3210,6 +3827,7 @@ local SERVICE_ORDER = {
 	"CodexService",
 	"EnhanceService",
 	"SwordService",
+	"SwordDisplayService",
 	"TreadmillService",
 	"RaceService",
 	"ChatCommandService",
@@ -3265,11 +3883,11 @@ runStage("Start", services)
 print(`[Bootstrap] 서비스 {#services}개 시작 완료`)
 ]]></string>
       </Properties>
-      <Item class="Folder" referent="28">
+      <Item class="Folder" referent="30">
         <Properties>
           <string name="Name">services</string>
         </Properties>
-        <Item class="ModuleScript" referent="29">
+        <Item class="ModuleScript" referent="31">
           <Properties>
             <string name="Name">AdminService</string>
             <string name="Source"><![CDATA[--!strict
@@ -3762,7 +4380,7 @@ return AdminService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="30">
+        <Item class="ModuleScript" referent="32">
           <Properties>
             <string name="Name">AnalyticsService</string>
             <string name="Source"><![CDATA[--!strict
@@ -3904,7 +4522,7 @@ return AnalyticsService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="31">
+        <Item class="ModuleScript" referent="33">
           <Properties>
             <string name="Name">ChatCommandService</string>
             <string name="Source"><![CDATA[--!strict
@@ -4142,7 +4760,7 @@ return ChatCommandService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="32">
+        <Item class="ModuleScript" referent="34">
           <Properties>
             <string name="Name">CodexService</string>
             <string name="Source"><![CDATA[--!strict
@@ -4231,27 +4849,34 @@ return CodexService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="33">
+        <Item class="ModuleScript" referent="35">
           <Properties>
             <string name="Name">CourseBuilder</string>
             <string name="Source"><![CDATA[--!strict
 --[[
-	CourseBuilder — 경주 코스 한 판을 블록으로 짓는 유틸 (통합 기획서 4-1절 5번).
+	CourseBuilder — 경주 코스 "쇳물 수로" 한 판을 블록으로 짓는 유틸 (통합 기획서 4-1·8-2절).
 
 	생명주기(Init/Start)가 없어서 부트스트랩 순서 목록에 넣지 않는다. RaceService 만 쓴다.
 
 	무엇을 어디에 놓을지(장애물 종류·위치)는 Pure/RaceLogic.generateObstacles 가 정하고,
-	여기서는 그 목록을 받아 파트로 만들기만 한다. 크기·색은 Config/World 의 COURSE 값이다.
+	여기서는 그 목록을 받아 파트로 만들기만 한다.
+	  바닥 = 검은 돌, 양쪽 가장자리 = 갈라진 틈처럼 빛나는 쇳물 줄, 벽 = 낮은 돌벽 + 보이지 않는 벽
+	  100칸마다 바닥 문양 띠와 숫자판, 500칸마다 화로 아치
+	  장애물: 식은 쇳덩이(옆으로 피함) · 쇳물 홈(뛰어넘음) · 거푸집 벽(틈으로 지나감)
+	  출발선: 흰 선, 쇠창살(보기만, 부딪히지 않음), 화로 3개 (카운트다운에 맞춰 기기가 켠다)
+	  추격자 = 쇳물 해일: 네온 벽 + 불 + 불티 + 강한 빛. 출렁이는 꼭대기 같은 장식은 기기가 붙인다.
 
 	좌표: origin 이 출발선 가운데의 바닥 윗면이다. 코스는 +Z 방향으로 뻗는다.
-	추격자는 서버가 매 프레임 옮기는 큰 벽이다. 닿아서 잡는 게 아니라, 서버가 위치를 비교해 잡는다
-	(그래서 추격자 파트는 충돌이 꺼져 있다).
+	추격자는 서버가 매 프레임 옮기는 큰 벽이다. 닿아서 잡는 게 아니라 서버가 위치를 비교해 잡는다
+	(그래서 추격자 파트는 부딪히지 않는다).
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
-local World = require(Shared:WaitForChild("Config"):WaitForChild("World"))
+local ConfigFolder = Shared:WaitForChild("Config")
+local World = require(ConfigFolder:WaitForChild("World"))
+local Palette = require(ConfigFolder:WaitForChild("Palette"))
 local RaceLogic = require(Shared:WaitForChild("Pure"):WaitForChild("RaceLogic"))
 
 local CourseBuilder = {}
@@ -4264,22 +4889,21 @@ export type Built = {
 	trackWidth: number,
 }
 
-local COLOR_FLOOR_A = Color3.fromRGB(70, 66, 76)
-local COLOR_FLOOR_B = Color3.fromRGB(58, 54, 64)
-local COLOR_WALL = Color3.fromRGB(120, 150, 190)
-local COLOR_START = Color3.fromRGB(240, 236, 230)
-local COLOR_MARKER = Color3.fromRGB(226, 142, 58)
-local COLOR_BLOCK = Color3.fromRGB(150, 84, 62)
-local COLOR_HURDLE = Color3.fromRGB(230, 200, 80)
-local COLOR_GATE = Color3.fromRGB(128, 96, 170)
-local COLOR_CHASER = Color3.fromRGB(255, 60, 40)
+local W = Palette.WORLD
+local function rgb(values: { number }): Color3
+	return Color3.fromRGB(values[1], values[2], values[3])
+end
+
+local FLOOR_A = { 38, 34, 42 }
+local FLOOR_B = { 32, 29, 36 }
 
 local function makePart(
 	parent: Instance,
 	name: string,
 	size: Vector3,
 	position: Vector3,
-	color: Color3
+	color: { number },
+	material: Enum.Material?
 ): Part
 	local part = Instance.new("Part")
 	part.Name = name
@@ -4287,13 +4911,23 @@ local function makePart(
 	part.CanTouch = false
 	part.Size = size
 	part.Position = position
-	part.Color = color
-	part.Material = Enum.Material.SmoothPlastic
+	part.Color = rgb(color)
+	part.Material = material or Enum.Material.Slate
+	part.TopSurface = Enum.SurfaceType.Smooth
+	part.BottomSurface = Enum.SurfaceType.Smooth
 	part.Parent = parent
 	return part
 end
 
--- 바닥과 양옆 벽을 zFrom ~ zTo 구간에 놓는다.
+local function glow(part: Part, transparency: number?): Part
+	part.Material = Enum.Material.Neon
+	part.CanCollide = false
+	part.CastShadow = false
+	part.Transparency = transparency or 0
+	return part
+end
+
+-- 바닥 · 쇳물 줄 · 돌벽 · 보이지 않는 벽을 zFrom ~ zTo 구간에 놓는다.
 local function buildSegment(
 	parent: Instance,
 	origin: Vector3,
@@ -4311,46 +4945,173 @@ local function buildSegment(
 		`Floor{index}`,
 		Vector3.new(trackWidth, course.floorThickness, length),
 		Vector3.new(origin.X, origin.Y - course.floorThickness / 2, centerZ),
-		if index % 2 == 0 then COLOR_FLOOR_A else COLOR_FLOOR_B
+		if index % 2 == 0 then FLOOR_A else FLOOR_B
 	)
 
 	for side = -1, 1, 2 do
-		local wall = makePart(
+		local edgeX = origin.X + side * (trackWidth / 2 - 0.4)
+		glow(
+			makePart(
+				parent,
+				`Crack{index}`,
+				Vector3.new(0.5, 0.06, length),
+				Vector3.new(edgeX, origin.Y + 0.03, centerZ),
+				W.molten
+			),
+			0.15
+		)
+
+		local wallX = origin.X + side * (trackWidth / 2 + course.wallThickness / 2)
+		makePart(
 			parent,
-			`Wall{index}{if side < 0 then "L" else "R"}`,
-			Vector3.new(course.wallThickness, course.wallHeight, length),
+			`Wall{index}`,
+			Vector3.new(course.wallThickness, course.solidWallHeight, length),
+			Vector3.new(wallX, origin.Y + course.solidWallHeight / 2, centerZ),
+			W.stone
+		)
+		local barrier = makePart(
+			parent,
+			`Barrier{index}`,
+			Vector3.new(course.wallThickness, course.wallHeight - course.solidWallHeight, length),
 			Vector3.new(
-				origin.X + side * (trackWidth / 2 + course.wallThickness / 2),
-				origin.Y + course.wallHeight / 2,
+				wallX,
+				origin.Y + course.solidWallHeight + (course.wallHeight - course.solidWallHeight) / 2,
 				centerZ
 			),
-			COLOR_WALL
+			W.stone
 		)
-		wall.Transparency = 0.7
-		wall.CastShadow = false
+		barrier.Transparency = 1
+		barrier.CastShadow = false
 	end
 end
 
--- 바닥에 붙은 얇은 줄 (출발선, 거리 표시). 밟아도 걸리지 않는다.
-local function buildStripe(
-	parent: Instance,
-	origin: Vector3,
-	trackWidth: number,
-	z: number,
-	name: string,
-	color: Color3,
-	depth: number
-)
-	local stripe = makePart(
-		parent,
-		name,
-		Vector3.new(trackWidth, 0.2, depth),
-		Vector3.new(origin.X, origin.Y + 0.1, origin.Z + z),
-		color
+-- 100칸마다: 바닥 문양 띠 + 왼쪽 벽 위 숫자판
+local function buildMarker(parent: Instance, origin: Vector3, trackWidth: number, z: number)
+	glow(
+		makePart(
+			parent,
+			`Marker{z}`,
+			Vector3.new(trackWidth - 1, 0.08, 0.8),
+			Vector3.new(origin.X, origin.Y + 0.04, origin.Z + z),
+			W.ember
+		),
+		0.35
 	)
-	stripe.CanCollide = false
-	stripe.CastShadow = false
-	stripe.Material = Enum.Material.Neon
+
+	local plate = makePart(
+		parent,
+		`MarkerPlate{z}`,
+		Vector3.new(0.4, 2.4, 4.4),
+		Vector3.new(
+			origin.X - trackWidth / 2 - 0.2,
+			origin.Y + World.COURSE.solidWallHeight + 1.4,
+			origin.Z + z
+		),
+		W.wood,
+		Enum.Material.WoodPlanks
+	)
+	plate.CanCollide = false
+
+	-- 숫자만 쓰므로 언어와 상관없이 서버가 붙인다 (오른쪽 면 = 트랙 쪽)
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Right
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 40
+	gui.LightInfluence = 0
+	gui.Parent = plate
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Size = UDim2.fromScale(1, 1)
+	label.Font = Enum.Font.FredokaOne
+	label.TextScaled = true
+	label.TextColor3 = rgb(W.gold)
+	label.Text = tostring(z)
+	label.Parent = gui
+end
+
+-- 500칸마다: 돌기둥 두 개 + 윗돌 + 화로 두 개
+local function buildArch(parent: Instance, origin: Vector3, trackWidth: number, z: number)
+	local height = 14
+	for side = -1, 1, 2 do
+		local x = origin.X + side * (trackWidth / 2 - 1.5)
+		makePart(
+			parent,
+			"ArchPillar",
+			Vector3.new(3, height, 3),
+			Vector3.new(x, origin.Y + height / 2, origin.Z + z),
+			W.stone
+		)
+		local bowl = makePart(
+			parent,
+			"ArchBrazier",
+			Vector3.new(2, 1, 2),
+			Vector3.new(x, origin.Y + height + 0.5, origin.Z + z),
+			W.iron,
+			Enum.Material.Metal
+		)
+		local flame = Instance.new("Fire")
+		flame.Color = rgb(W.molten)
+		flame.SecondaryColor = rgb(W.moltenHot)
+		flame.Size = 4
+		flame.Parent = bowl
+	end
+	makePart(
+		parent,
+		"ArchLintel",
+		Vector3.new(trackWidth, 2.5, 3),
+		Vector3.new(origin.X, origin.Y + height - 1.25, origin.Z + z),
+		W.stone
+	)
+end
+
+-- 출발선: 흰 선 · 쇠창살 · 화로 3개
+local function buildStart(parent: Instance, origin: Vector3, trackWidth: number)
+	local course = World.COURSE
+	glow(
+		makePart(
+			parent,
+			"StartLine",
+			Vector3.new(trackWidth, 0.1, 1.6),
+			Vector3.new(origin.X, origin.Y + 0.05, origin.Z),
+			{ 240, 236, 230 }
+		),
+		0
+	)
+
+	-- 쇠창살 (출발 신호 전에는 어차피 움직일 수 없으므로 보기만 한다)
+	for index = 1, course.startBars do
+		local x = origin.X - trackWidth / 2 + (index - 0.5) * trackWidth / course.startBars
+		local bar = makePart(
+			parent,
+			"StartBar",
+			Vector3.new(0.5, 8, 0.5),
+			Vector3.new(x, origin.Y + 4, origin.Z + 1.5),
+			W.iron,
+			Enum.Material.Metal
+		)
+		bar.CanCollide = false
+	end
+
+	-- 출발 아치 + 화로 3개 (3·2·1 에 하나씩 켜진다)
+	buildArch(parent, origin, trackWidth, -3)
+	for index = 1, 3 do
+		local x = origin.X + (index - 2) * 6
+		local bowl = makePart(
+			parent,
+			`StartBrazier{index}`,
+			Vector3.new(2, 1, 2),
+			Vector3.new(x, origin.Y + 14.5, origin.Z - 3),
+			W.iron,
+			Enum.Material.Metal
+		)
+		local flame = Instance.new("Fire")
+		flame.Name = "CountFire"
+		flame.Color = rgb(W.molten)
+		flame.SecondaryColor = rgb(W.moltenHot)
+		flame.Size = 4
+		flame.Enabled = false
+		flame.Parent = bowl
+	end
 end
 
 local function buildObstacle(
@@ -4364,23 +5125,51 @@ local function buildObstacle(
 	local z = origin.Z + obstacle.z
 
 	if obstacle.kind == "block" then
+		-- 식은 쇳덩이 + 윗면 모서리 열기 줄
 		makePart(
 			parent,
 			`Block{index}`,
 			Vector3.new(obstacle.width, course.blockHeight, course.blockDepth),
 			Vector3.new(origin.X + obstacle.x, origin.Y + course.blockHeight / 2, z),
-			COLOR_BLOCK
+			W.iron,
+			Enum.Material.Metal
+		)
+		glow(
+			makePart(
+				parent,
+				`BlockSeam{index}`,
+				Vector3.new(obstacle.width + 0.1, 0.25, 0.3),
+				Vector3.new(
+					origin.X + obstacle.x,
+					origin.Y + course.blockHeight - 0.2,
+					z - course.blockDepth / 2
+				),
+				W.moltenHot
+			),
+			0.1
 		)
 	elseif obstacle.kind == "hurdle" then
+		-- 쇳물 홈: 낮은 쇠 막대 + 밑에서 새어 나오는 주황 빛 ("뜨거우니 넘어라")
 		makePart(
 			parent,
 			`Hurdle{index}`,
 			Vector3.new(obstacle.width, course.hurdleHeight, course.hurdleDepth),
 			Vector3.new(origin.X + obstacle.x, origin.Y + course.hurdleHeight / 2, z),
-			COLOR_HURDLE
+			W.iron,
+			Enum.Material.Metal
+		)
+		glow(
+			makePart(
+				parent,
+				`HurdleGlow{index}`,
+				Vector3.new(obstacle.width, 0.08, course.hurdleDepth + 2),
+				Vector3.new(origin.X + obstacle.x, origin.Y + 0.05, z),
+				W.molten
+			),
+			0.25
 		)
 	else
-		-- gate: 틈의 왼쪽과 오른쪽을 각각 벽으로 막는다.
+		-- 거푸집 벽: 틈 양쪽을 막고, 틈 가장자리에 등불 (멀리서도 틈이 보이게)
 		local half = trackWidth / 2
 		local gapLeft = obstacle.x - obstacle.width / 2
 		local gapRight = obstacle.x + obstacle.width / 2
@@ -4392,10 +5181,9 @@ local function buildObstacle(
 				`Gate{index}L`,
 				Vector3.new(leftWidth, course.gateHeight, course.gateDepth),
 				Vector3.new(origin.X + (-half + gapLeft) / 2, origin.Y + course.gateHeight / 2, z),
-				COLOR_GATE
+				W.stone
 			)
 		end
-
 		local rightWidth = half - gapRight
 		if rightWidth > 0.5 then
 			makePart(
@@ -4403,7 +5191,23 @@ local function buildObstacle(
 				`Gate{index}R`,
 				Vector3.new(rightWidth, course.gateHeight, course.gateDepth),
 				Vector3.new(origin.X + (gapRight + half) / 2, origin.Y + course.gateHeight / 2, z),
-				COLOR_GATE
+				W.stone
+			)
+		end
+		for _, edge in { gapLeft, gapRight } do
+			glow(
+				makePart(
+					parent,
+					`Lantern{index}`,
+					Vector3.new(0.8, 1.2, 0.8),
+					Vector3.new(
+						origin.X + edge,
+						origin.Y + course.gateHeight - 1.5,
+						z - course.gateDepth / 2 - 0.5
+					),
+					W.gold
+				),
+				0
 			)
 		end
 	end
@@ -4431,7 +5235,6 @@ function CourseBuilder.build(
 	local backZ = -(headStart + course.backExtra)
 	buildSegment(folder, origin, trackWidth, backZ, 0, 0)
 
-	-- 출발선 앞쪽
 	local index = 1
 	local z = 0
 	while z < length do
@@ -4444,22 +5247,23 @@ function CourseBuilder.build(
 	-- 앞뒤 끝을 막는 벽
 	local outerWidth = trackWidth + course.wallThickness * 2
 	for _, endZ in { backZ - course.wallThickness / 2, length + course.wallThickness / 2 } do
-		local wall = makePart(
+		makePart(
 			folder,
 			"EndWall",
 			Vector3.new(outerWidth, course.wallHeight, course.wallThickness),
 			Vector3.new(origin.X, origin.Y + course.wallHeight / 2, origin.Z + endZ),
-			COLOR_WALL
+			W.stone
 		)
-		wall.Transparency = 0.7
-		wall.CastShadow = false
 	end
 
-	buildStripe(folder, origin, trackWidth, 0, "StartLine", COLOR_START, 2)
+	buildStart(folder, origin, trackWidth)
 
 	local marker = course.markerEvery
 	while marker < length do
-		buildStripe(folder, origin, trackWidth, marker, `Marker{marker}`, COLOR_MARKER, 1)
+		buildMarker(folder, origin, trackWidth, marker)
+		if marker % course.archEvery == 0 then
+			buildArch(folder, origin, trackWidth, marker + 3)
+		end
 		marker += course.markerEvery
 	end
 
@@ -4467,17 +5271,44 @@ function CourseBuilder.build(
 		buildObstacle(folder, origin, trackWidth, obstacle, obstacleIndex)
 	end
 
+	-- 쇳물 해일
 	local chaser = makePart(
 		folder,
 		World.CHASER_NAME,
 		Vector3.new(outerWidth, course.chaserHeight, course.chaserDepth),
 		Vector3.new(origin.X, origin.Y + course.chaserHeight / 2, origin.Z),
-		COLOR_CHASER
+		W.molten,
+		Enum.Material.Neon
 	)
 	chaser.CanCollide = false
 	chaser.CastShadow = false
-	chaser.Material = Enum.Material.Neon
-	chaser.Transparency = 0.25
+	chaser.Transparency = 0.15
+
+	local flame = Instance.new("Fire")
+	flame.Color = rgb(W.molten)
+	flame.SecondaryColor = rgb(W.moltenHot)
+	flame.Size = 25
+	flame.Heat = 20
+	flame.Parent = chaser
+
+	local embers = Instance.new("ParticleEmitter")
+	embers.Name = "Embers"
+	embers.Color = ColorSequence.new(rgb(W.moltenHot))
+	embers.LightEmission = 1
+	embers.Rate = 40
+	embers.Lifetime = NumberRange.new(1, 2)
+	embers.Speed = NumberRange.new(6, 14)
+	embers.SpreadAngle = Vector2.new(40, 40)
+	embers.Acceleration = Vector3.new(0, 6, 0)
+	embers.Size = NumberSequence.new(0.5, 0)
+	embers.EmissionDirection = Enum.NormalId.Front
+	embers.Parent = chaser
+
+	local chaserLight = Instance.new("PointLight")
+	chaserLight.Color = rgb(W.molten)
+	chaserLight.Range = 60
+	chaserLight.Brightness = 3
+	chaserLight.Parent = chaser
 
 	local built: Built = {
 		folder = folder,
@@ -4493,7 +5324,7 @@ function CourseBuilder.build(
 	return built
 end
 
--- 추격자 앞면을 출발선 기준 front 칸 위치로 옮긴다.
+-- 추격자 앞면을 출발선 기준 front 칸 위치로 옮긴다. (앞면 = +Z 쪽 면, 파트의 Back 면)
 function CourseBuilder.moveChaser(built: Built, front: number)
 	local course = World.COURSE
 	local origin = built.origin
@@ -4502,14 +5333,13 @@ function CourseBuilder.moveChaser(built: Built, front: number)
 		origin.X,
 		origin.Y + course.chaserHeight / 2,
 		origin.Z + front - course.chaserDepth / 2
-	)
+	) * CFrame.Angles(0, math.pi, 0) -- Front 면(불티 나오는 쪽)이 +Z 를 보게
 end
 
 -- 출발선 위, 트랙 중심에서 offsetX 만큼 옆에 서서 코스 앞쪽(+Z)을 보는 자리
 function CourseBuilder.lineupCFrame(built: Built, offsetX: number): CFrame
 	local origin = built.origin
 	local position = Vector3.new(origin.X + offsetX, origin.Y + World.COURSE.spawnHeight, origin.Z)
-
 	return CFrame.lookAt(position, position + Vector3.new(0, 0, 1))
 end
 
@@ -4521,7 +5351,7 @@ return CourseBuilder
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="34">
+        <Item class="ModuleScript" referent="36">
           <Properties>
             <string name="Name">DataService</string>
             <string name="Source"><![CDATA[--!strict
@@ -4893,7 +5723,7 @@ return DataService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="35">
+        <Item class="ModuleScript" referent="37">
           <Properties>
             <string name="Name">EconomyService</string>
             <string name="Source"><![CDATA[--!strict
@@ -5119,7 +5949,7 @@ return EconomyService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="36">
+        <Item class="ModuleScript" referent="38">
           <Properties>
             <string name="Name">EnhanceService</string>
             <string name="Source"><![CDATA[--!strict
@@ -5536,7 +6366,7 @@ return EnhanceService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="37">
+        <Item class="ModuleScript" referent="39">
           <Properties>
             <string name="Name">LeaderboardService</string>
             <string name="Source"><![CDATA[--!strict
@@ -5743,7 +6573,7 @@ return LeaderboardService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="38">
+        <Item class="ModuleScript" referent="40">
           <Properties>
             <string name="Name">LiveOpsService</string>
             <string name="Source"><![CDATA[--!strict
@@ -6006,7 +6836,7 @@ return LiveOpsService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="39">
+        <Item class="ModuleScript" referent="41">
           <Properties>
             <string name="Name">RaceService</string>
             <string name="Source"><![CDATA[--!strict
@@ -6041,6 +6871,7 @@ return LiveOpsService
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Types = require(Shared:WaitForChild("Types"))
@@ -6128,6 +6959,11 @@ local usedSlots: { [number]: boolean } = {}
 local nextRaceId = 1
 
 local updateRemote: RemoteEvent? = nil
+
+-- 쇳물 관문 바닥 원으로 대기열에 들어온 사람 (원 밖으로 나가면 빠진다)
+local joinedByRing: { [Player]: boolean } = {}
+local RING_CHECK_SECONDS = 0.2
+local lastRingCheck = 0
 
 local function fail(reason: string): Types.Failure
 	return { ok = false, reason = reason }
@@ -6217,9 +7053,23 @@ end
 -- 대기열
 --------------------------------------------------------------------------------
 
+-- 관문 전광판·고리 연출용 상태 (대기 인원, 출발 예정 시각)
+local function publishGate(secondsLeft: number?)
+	local gate = WorldService.getGate()
+	if gate == nil then
+		return
+	end
+	gate:SetAttribute(World.ATTR.queueCount, #queue)
+	gate:SetAttribute(
+		World.ATTR.departAt,
+		if #queue > 0 and secondsLeft then Workspace:GetServerTimeNow() + secondsLeft else 0
+	)
+end
+
 local function notifyQueue()
 	local waited = os.clock() - queueOpenedAt
 	local secondsLeft = RaceLogic.secondsUntilStart(waited, RaceConfig.MATCH_WINDOW_SECONDS)
+	publishGate(secondsLeft)
 
 	for _, player in queue do
 		send(player, {
@@ -6237,6 +7087,7 @@ local function removeFromQueue(player: Player): boolean
 		return false
 	end
 	table.remove(queue, index)
+	joinedByRing[player] = nil
 	return true
 end
 
@@ -6245,7 +7096,8 @@ end
 --------------------------------------------------------------------------------
 
 local function sendToLobby(player: Player)
-	WorldService.teleportToLobby(player)
+	-- 관문 앞으로 돌아온다 (바로 다시 참가하기 쉽게)
+	WorldService.teleportToReturnPoint(player)
 	setWalkSpeed(player, RaceConfig.BASE_SPEED)
 	send(player, { kind = "lobby" })
 end
@@ -6623,8 +7475,19 @@ local function stepRace(race: Race, now: number)
 	end
 end
 
+-- 관문 바닥 원 확인 (아래 "리모트" 부분에서 정의한다. step 이 먼저 나오므로 이름만 미리 둔다)
+local checkRing: () -> ()
+
 local function step()
 	local now = os.clock()
+
+	if now - lastRingCheck >= RING_CHECK_SECONDS then
+		lastRingCheck = now
+		local ok, err = pcall(checkRing)
+		if not ok then
+			warn(`[RaceService] 관문 원 확인 오류: {err}`)
+		end
+	end
 
 	if
 		RaceLogic.shouldDepart(
@@ -6637,6 +7500,12 @@ local function step()
 	then
 		local batch = queue
 		queue = {}
+		joinedByRing = {}
+		publishGate(nil)
+		local gate = WorldService.getGate()
+		if gate then
+			gate:SetAttribute(World.ATTR.launchAt, Workspace:GetServerTimeNow())
+		end
 
 		local ok, err = xpcall(startRace, debug.traceback, batch)
 		if not ok then
@@ -6667,11 +7536,8 @@ end
 -- 리모트
 --------------------------------------------------------------------------------
 
-local function handleJoin(player: Player): Types.SimpleResponse
-	if not limiter:consume(player.UserId) then
-		return fail("too_fast")
-	end
-
+-- 대기열에 넣는다 (버튼과 관문 바닥 원이 같이 쓴다). 레이트 리밋은 부르는 쪽이 한다.
+local function joinQueue(player: Player): Types.SimpleResponse
 	if LiveOpsService.isMaintenance() then
 		return fail("maintenance")
 	end
@@ -6700,6 +7566,51 @@ local function handleJoin(player: Player): Types.SimpleResponse
 
 	notifyQueue()
 	return { ok = true }
+end
+
+local function handleJoin(player: Player): Types.SimpleResponse
+	if not limiter:consume(player.UserId) then
+		return fail("too_fast")
+	end
+	return joinQueue(player)
+end
+
+--[[
+	쇳물 관문 바닥 원: 올라서면 대기열에 들어가고, 원으로 들어온 사람이 원 밖으로 나가면 빠진다.
+	위치는 서버가 본 캐릭터 위치로 판단한다. 버튼으로 들어온 사람은 원 밖에 있어도 그대로 둔다.
+]]
+function checkRing()
+	local gateSpec = World.GATE
+	if WorldService.getGate() == nil then
+		return
+	end
+
+	for _, player in Players:GetPlayers() do
+		if raceOf[player] ~= nil then
+			continue
+		end
+		local root = rootOf(player)
+		local inside = false
+		if root then
+			local position = root.Position
+			local dx, dz = position.X - gateSpec.ringX, position.Z - gateSpec.ringZ
+			inside = dx * dx + dz * dz <= gateSpec.ringRadius * gateSpec.ringRadius
+				and position.Y >= 0
+				and position.Y <= gateSpec.ringReach
+		end
+
+		local queued = table.find(queue, player) ~= nil
+		if inside and not queued then
+			local response = joinQueue(player)
+			if response.ok then
+				joinedByRing[player] = true
+			end
+		elseif not inside and queued and joinedByRing[player] then
+			removeFromQueue(player)
+			notifyQueue()
+			send(player, { kind = "queue", queued = false })
+		end
+	end
 end
 
 local function handleLeaveQueue(player: Player): Types.SimpleResponse
@@ -6833,7 +7744,7 @@ return RaceService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="40">
+        <Item class="ModuleScript" referent="42">
           <Properties>
             <string name="Name">RateLimiter</string>
             <string name="Source"><![CDATA[--!strict
@@ -6945,7 +7856,7 @@ return RateLimiter
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="41">
+        <Item class="ModuleScript" referent="43">
           <Properties>
             <string name="Name">ShopService</string>
             <string name="Source"><![CDATA[--!strict
@@ -7438,7 +8349,197 @@ return ShopService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="42">
+        <Item class="ModuleScript" referent="44">
+          <Properties>
+            <string name="Name">SwordDisplayService</string>
+            <string name="Source"><![CDATA[--!strict
+--[[
+	SwordDisplayService — 블록 3D 검을 보여 준다 (통합 기획서 8-2절).
+
+	1) 손에 든 검: 모든 플레이어의 오른손에 착용 검을 붙인다. 레벨 색(쇠 달구는 색)과 등급 색이 보인다.
+	   보기만 하는 장식이다(부딪힘·무게·능력 없음). 착용 검이나 레벨이 바뀌면 다시 붙인다.
+	2) 이 서버 최고 검 진열대: 지금 서버에 있는 사람 중 가장 높은 착용 검을 진열대에 세우고,
+	   받침에 주인 이름·검·레벨 속성을 단다(명패 글자와 회전은 기기가 한다). 저장하지 않는다.
+
+	검 모양은 shared/SwordModel(Config/SwordShapes) 이 만든다. 1초마다 바뀐 것만 확인한다.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local SwordModel = require(Shared:WaitForChild("SwordModel"))
+local World = require(Shared:WaitForChild("Config"):WaitForChild("World"))
+local SwordLogic = require(Shared:WaitForChild("Pure"):WaitForChild("SwordLogic"))
+
+local services = script.Parent
+local DataService = require(services:WaitForChild("DataService"))
+local WorldService = require(services:WaitForChild("WorldService"))
+
+local SwordDisplayService = {}
+SwordDisplayService.Name = "SwordDisplayService"
+
+local CHECK_SECONDS = 1
+local HAND_SCALE = 0.62 -- 캐릭터 키(약 5칸)에 맞춘 크기
+
+-- 플레이어마다 지금 손에 붙인 검의 "검id:레벨"
+local handSignature: { [Player]: string } = {}
+local showcaseSignature = ""
+local showcaseModel: Model? = nil
+
+local function handOf(character: Model): BasePart?
+	local hand = character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
+	if hand and hand:IsA("BasePart") then
+		return hand
+	end
+	return nil
+end
+
+local function attachToHand(player: Player, swordId: string, level: number)
+	local character = player.Character
+	if character == nil then
+		return
+	end
+	local hand = handOf(character)
+	if hand == nil then
+		return
+	end
+
+	local old = character:FindFirstChild(SwordModel.MODEL_NAME)
+	if old then
+		old:Destroy()
+	end
+
+	-- 손 아래쪽에서 쥐고, 칼날이 앞(-Z)을 향하게
+	local grip = hand.CFrame
+		* CFrame.new(0, -hand.Size.Y / 2, -0.15)
+		* CFrame.Angles(math.rad(-90), 0, 0)
+	local model = SwordModel.build(swordId, level, {
+		cframe = grip,
+		scale = HAND_SCALE,
+		anchored = false,
+		effects = true,
+	})
+
+	local handle = model.PrimaryPart
+	if handle == nil then
+		model:Destroy()
+		return
+	end
+
+	local weld = Instance.new("WeldConstraint")
+	weld.Part0 = hand
+	weld.Part1 = handle
+	weld.Parent = handle
+
+	model.Parent = character
+	handSignature[player] = `{swordId}:{level}`
+end
+
+local function updateHands()
+	for player, data in DataService.getAllActive() do
+		local sword = SwordLogic.equipped(data.swords, data.equippedId)
+		local character = player.Character
+		if sword == nil or character == nil then
+			continue
+		end
+
+		local signature = `{sword.id}:{sword.level}`
+		local attached = character:FindFirstChild(SwordModel.MODEL_NAME) ~= nil
+		if handSignature[player] ~= signature or not attached then
+			local ok, err = pcall(attachToHand, player, sword.id, sword.level)
+			if not ok then
+				warn(
+					`[SwordDisplayService] 손에 검을 붙이지 못했습니다 ({player.UserId}): {err}`
+				)
+			end
+		end
+	end
+end
+
+local function updateShowcase()
+	local base = WorldService.getShowcaseBase()
+	if base == nil then
+		return
+	end
+
+	-- 지금 서버에서 가장 높은 착용 검 (같으면 이름순)
+	local bestPlayer: Player? = nil
+	local bestId, bestLevel = "", -1
+	for player, data in DataService.getAllActive() do
+		local sword = SwordLogic.equipped(data.swords, data.equippedId)
+		if sword == nil then
+			continue
+		end
+		local better = sword.level > bestLevel
+			or (sword.level == bestLevel and bestPlayer ~= nil and player.Name < bestPlayer.Name)
+		if better then
+			bestPlayer, bestId, bestLevel = player, sword.id, sword.level
+		end
+	end
+
+	local owner = bestPlayer
+	local signature = if owner then `{owner.UserId}:{bestId}:{bestLevel}` else ""
+	if signature == showcaseSignature then
+		return
+	end
+	showcaseSignature = signature
+
+	local old = showcaseModel
+	if old then
+		old:Destroy()
+		showcaseModel = nil
+	end
+
+	if owner == nil then
+		base:SetAttribute(World.ATTR.ownerName, "")
+		base:SetAttribute(World.ATTR.swordId, "")
+		base:SetAttribute(World.ATTR.swordLevel, 0)
+		return
+	end
+
+	-- 유리 상자 가운데에 세운다 (회전·떠오르기는 기기가 한다)
+	local top = base.Position.Y + base.Size.Y / 2
+	local model = SwordModel.build(bestId, bestLevel, {
+		cframe = CFrame.new(base.Position.X, top + 1.3, base.Position.Z),
+		scale = 0.85,
+		anchored = true,
+		effects = true,
+	})
+	model.Name = "ShowcaseSword"
+	model.Parent = base.Parent
+	showcaseModel = model
+
+	base:SetAttribute(World.ATTR.ownerName, owner.DisplayName)
+	base:SetAttribute(World.ATTR.swordId, bestId)
+	base:SetAttribute(World.ATTR.swordLevel, bestLevel)
+end
+
+function SwordDisplayService.Start()
+	Players.PlayerRemoving:Connect(function(player)
+		handSignature[player] = nil
+	end)
+
+	task.spawn(function()
+		while true do
+			local ok, err = pcall(updateHands)
+			if not ok then
+				warn(`[SwordDisplayService] 손에 든 검 갱신 오류: {err}`)
+			end
+			local okShowcase, errShowcase = pcall(updateShowcase)
+			if not okShowcase then
+				warn(`[SwordDisplayService] 진열대 갱신 오류: {errShowcase}`)
+			end
+			task.wait(CHECK_SECONDS)
+		end
+	end)
+end
+
+return SwordDisplayService
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="45">
           <Properties>
             <string name="Name">SwordService</string>
             <string name="Source"><![CDATA[--!strict
@@ -7617,7 +8718,7 @@ return SwordService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="43">
+        <Item class="ModuleScript" referent="46">
           <Properties>
             <string name="Name">TreadmillService</string>
             <string name="Source"><![CDATA[--!strict
@@ -7637,11 +8738,13 @@ return SwordService
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Types = require(Shared:WaitForChild("Types"))
 local Remotes = require(Shared:WaitForChild("Remotes"))
 local TreadmillLogic = require(Shared:WaitForChild("Pure"):WaitForChild("TreadmillLogic"))
+local World = require(Shared:WaitForChild("Config"):WaitForChild("World"))
 
 local services = script.Parent
 local DataService = require(services:WaitForChild("DataService"))
@@ -7693,10 +8796,31 @@ local function padUnder(player: Player): WorldService.TreadmillPad?
 	return nil
 end
 
+--[[
+	광장 연출용 상태를 세계 물체의 속성으로 알린다 (기기가 보고 벨트·풀무·화덕을 움직인다).
+	  발판 Occupied: 누가 올라서 있는지 / Lobby TreadmillUsers: 러닝머신 위 인원 (화덕 불 크기)
+]]
+local function publishOccupancy(occupied: { [BasePart]: boolean }, users: number)
+	for _, pad in WorldService.getTreadmillPads() do
+		local now = occupied[pad.part] == true
+		if pad.part:GetAttribute(World.ATTR.occupied) ~= now then
+			pad.part:SetAttribute(World.ATTR.occupied, now)
+		end
+	end
+	local lobby = WorldService.getLobby()
+	if lobby and lobby:GetAttribute(World.ATTR.treadmillUsers) ~= users then
+		lobby:SetAttribute(World.ATTR.treadmillUsers, users)
+	end
+end
+
 local function step(dt: number)
 	if LiveOpsService.isMaintenance() then
+		publishOccupancy({}, 0)
 		return
 	end
+
+	local occupied: { [BasePart]: boolean } = {}
+	local users = 0
 
 	for player, data in DataService.getAllActive() do
 		local pad = padUnder(player)
@@ -7715,6 +8839,9 @@ local function step(dt: number)
 			continue
 		end
 
+		occupied[pad.part] = true
+		users += 1
+
 		local tier = pad.tier
 		local rest, payouts =
 			TreadmillLogic.advance(progress[player] or 0, dt, tier.intervalSeconds)
@@ -7725,6 +8852,8 @@ local function step(dt: number)
 		if payouts > 0 then
 			paid = EconomyService.addGold(player, data, payouts * tier.gold, "treadmill")
 			DataService.replicate(player)
+			-- 주변 사람에게도 금화가 튀는 연출이 보이게 지급 시각을 남긴다
+			pad.part:SetAttribute(World.ATTR.paidAt, Workspace:GetServerTimeNow())
 		end
 
 		send(player, {
@@ -7735,6 +8864,8 @@ local function step(dt: number)
 			paid = paid,
 		})
 	end
+
+	publishOccupancy(occupied, users)
 end
 
 function TreadmillService.Init()
@@ -7769,34 +8900,43 @@ return TreadmillService
 ]]></string>
           </Properties>
         </Item>
-        <Item class="ModuleScript" referent="44">
+        <Item class="ModuleScript" referent="47">
           <Properties>
             <string name="Name">WorldService</string>
             <string name="Source"><![CDATA[--!strict
 --[[
-	WorldService — 로비 공간을 코드로 짓는다 (통합 기획서 4-4·6절, 10-3절).
+	WorldService — 불씨 광장(로비)을 블록으로 짓는다 (통합 기획서 8-2절, 디자인 시안 "불씨 광장과 쇳물 수로").
 
-	미술 에셋이 없어서 블록으로만 짓는다: 바닥, 보이지 않는 벽, 스폰 지점, 모루 장식, 트레드밀 발판.
-	경주 코스는 판마다 RaceService 가 CourseBuilder 로 따로 짓고, 여기서는 코스를 담을 폴더만 만든다.
+	해 질 녘 대장간 마을. 지은 뒤 움직이는 장식(망치질, 벨트, 풀무, 관문 고리, 불빛 흔들림)은
+	각 플레이어 기기(WorldFxController)가 돌리고, 서버는 짓기와 "상태 속성"만 맡는다(서버 부담을 줄이기 위해).
+	글자(표지판, 전광판, 명예의 벽, 진열대 명패)도 언어가 플레이어마다 달라서 기기가 붙인다.
+
+	지은 것:
+	  바닥·낮은 돌담·보이지 않는 벽 / 스폰 원판 / 돌길과 표지판 / 횃불 8개
+	  모루 영감의 대장간(기단·기둥·지붕·뒷벽·화덕·굴뚝·모루·연장·물통) + 모루 영감 블록 인형 + "강화하기" 근접 버튼
+	  쇳물 관문(기둥·윗돌·문양·전광판·뒤 쇳물 폭포) + 바닥 원(고리 12칸)
+	  풀무 러닝머신 4대(받침·벨트·줄무늬·난간·손잡이·계기판·풀무) + 화덕까지 이어진 쇠 관
+	  명예의 벽 / 서버 최고 검 진열대(검은 SwordDisplayService 가 넣는다) / 담 밖 산
+	  해 질 녘 빛(시각·대기·번짐·색 보정·햇살)
 
 	- Workspace 에 이미 "Lobby" 폴더가 있으면(개발자가 Studio 에서 직접 꾸민 경우) 새로 짓지 않고
-	  그 안의 Treadmills 폴더에서 발판을 찾아 쓴다. 발판 파트에는 TreadmillTier 속성(단계 id)이 있어야 한다.
-	- 캐릭터끼리는 서로 부딪치지 않게 한다. 트레드밀에서 남을 밀어내거나 출발선에서 서로 끼는 일을 막는다.
-	  (공식 문서 workspace/collisions 의 "Disable character collisions" 방식)
-	- 발판 위 글자는 서버가 붙이지 않는다. 언어가 플레이어마다 달라서 클라이언트(LobbyController)가 붙인다.
-
-	부트스트랩 맨 앞에서 Init 된다. 플레이어의 캐릭터가 나타나기 전에 바닥이 있어야 하기 때문이다.
+	  그 안의 Treadmills 폴더에서 발판을 찾아 쓴다.
+	- 캐릭터끼리는 서로 부딪치지 않게 한다 (공식 문서 workspace/collisions 의 방식).
+	- 부트스트랩 맨 앞에서 Init 된다. 캐릭터가 나타나기 전에 바닥이 있어야 하기 때문이다.
 ]]
 
+local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Remotes = require(Shared:WaitForChild("Remotes"))
 
 local ConfigFolder = Shared:WaitForChild("Config")
 local World = require(ConfigFolder:WaitForChild("World"))
 local EconomyConfig = require(ConfigFolder:WaitForChild("EconomyConfig"))
+local Palette = require(ConfigFolder:WaitForChild("Palette"))
 
 local TreadmillLogic = require(Shared:WaitForChild("Pure"):WaitForChild("TreadmillLogic"))
 
@@ -7809,33 +8949,110 @@ export type TreadmillPad = {
 	bounds: TreadmillLogic.Pad,
 }
 
-local COLOR_FLOOR = Color3.fromRGB(58, 52, 62)
-local COLOR_SPAWN = Color3.fromRGB(226, 142, 58)
-local COLOR_ANVIL = Color3.fromRGB(38, 36, 42)
-local COLOR_PAD = Color3.fromRGB(72, 168, 132)
+local W = Palette.WORLD
+local function rgb(values: { number }): Color3
+	return Color3.fromRGB(values[1], values[2], values[3])
+end
 
 local rng = Random.new()
 
 local pads: { TreadmillPad } = {}
 local racesFolder: Folder? = nil
+local lobbyFolder: Instance? = nil
+local gateModel: Model? = nil
+local showcaseBase: BasePart? = nil
 local collisionGroupReady = false
+local worldEvent: RemoteEvent? = nil
 
-local function makePart(
-	parent: Instance,
-	name: string,
+--------------------------------------------------------------------------------
+-- 블록 하나 놓기
+--------------------------------------------------------------------------------
+
+type PartProps = {
+	name: string?,
 	size: Vector3,
-	position: Vector3,
-	color: Color3
-): Part
+	cframe: CFrame,
+	color: { number },
+	material: Enum.Material?,
+	shape: Enum.PartType?,
+	collide: boolean?,
+	transparency: number?,
+	shadow: boolean?,
+}
+
+local function block(parent: Instance, props: PartProps): Part
 	local part = Instance.new("Part")
-	part.Name = name
+	part.Name = props.name or "Part"
 	part.Anchored = true
-	part.Size = size
-	part.Position = position
-	part.Color = color
-	part.Material = Enum.Material.SmoothPlastic
+	part.CanTouch = false
+	part.Size = props.size
+	part.CFrame = props.cframe
+	part.Color = rgb(props.color)
+	part.Material = props.material or Enum.Material.SmoothPlastic
+	part.Shape = props.shape or Enum.PartType.Block
+	part.CanCollide = props.collide ~= false
+	part.Transparency = props.transparency or 0
+	part.CastShadow = props.shadow ~= false
+	part.TopSurface = Enum.SurfaceType.Smooth
+	part.BottomSurface = Enum.SurfaceType.Smooth
 	part.Parent = parent
 	return part
+end
+
+local function at(x: number, y: number, z: number): CFrame
+	return CFrame.new(x, y, z)
+end
+
+local function folder(parent: Instance, name: string): Folder
+	local f = Instance.new("Folder")
+	f.Name = name
+	f.Parent = parent
+	return f
+end
+
+local function light(
+	parent: Instance,
+	name: string,
+	color: { number },
+	range: number,
+	brightness: number,
+	shadows: boolean?
+)
+	local pointLight = Instance.new("PointLight")
+	pointLight.Name = name
+	pointLight.Color = rgb(color)
+	pointLight.Range = range
+	pointLight.Brightness = brightness
+	pointLight.Shadows = shadows == true
+	pointLight.Parent = parent
+	return pointLight
+end
+
+local function fire(parent: Instance, size: number, heat: number, name: string?)
+	local flame = Instance.new("Fire")
+	flame.Name = name or "Fire"
+	flame.Color = rgb(W.molten)
+	flame.SecondaryColor = rgb(W.moltenHot)
+	flame.Size = size
+	flame.Heat = heat
+	flame.Parent = parent
+	return flame
+end
+
+-- 불티 (기본 상태는 꺼짐, 연출이 :Emit 으로 쏜다)
+local function sparks(parent: Instance, name: string, color: { number }): ParticleEmitter
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Name = name
+	emitter.Color = ColorSequence.new(rgb(color))
+	emitter.LightEmission = 1
+	emitter.Rate = 0
+	emitter.Lifetime = NumberRange.new(0.3, 0.7)
+	emitter.Speed = NumberRange.new(6, 12)
+	emitter.SpreadAngle = Vector2.new(50, 50)
+	emitter.Size = NumberSequence.new(0.18, 0)
+	emitter.Acceleration = Vector3.new(0, -30, 0)
+	emitter.Parent = parent
+	return emitter
 end
 
 --------------------------------------------------------------------------------
@@ -7844,18 +9061,15 @@ end
 
 local function setupCollisionGroup()
 	local group = World.CHARACTER_COLLISION_GROUP
-
 	local ok, err = pcall(function()
 		if not Workspace:IsCollisionGroupRegistered(group) then
 			Workspace:RegisterCollisionGroup(group)
 		end
 		Workspace:CollisionGroupSetCollidable(group, group, false)
 	end)
-
 	if ok then
 		collisionGroupReady = true
 	else
-		-- 게임 진행에는 지장이 없다. 캐릭터끼리 부딪칠 뿐이다.
 		warn(`[WorldService] 충돌 그룹을 만들지 못했습니다: {err}`)
 	end
 end
@@ -7875,7 +9089,6 @@ end
 
 local function onPlayerAdded(player: Player)
 	player.CharacterAdded:Connect(onCharacterAdded)
-
 	local character = player.Character
 	if character then
 		onCharacterAdded(character)
@@ -7883,154 +9096,1025 @@ local function onPlayerAdded(player: Player)
 end
 
 --------------------------------------------------------------------------------
--- 로비 짓기
+-- 해 질 녘 빛
 --------------------------------------------------------------------------------
 
-local function buildWalls(parent: Instance)
+local function setupLighting()
+	Lighting.ClockTime = 17.6
+	Lighting.Brightness = 2
+	Lighting.Ambient = Color3.fromRGB(70, 52, 62)
+	Lighting.OutdoorAmbient = Color3.fromRGB(128, 96, 96)
+
+	-- Studio 에서 직접 넣은 효과가 있으면 존중한다
+	if Lighting:FindFirstChildOfClass("Atmosphere") == nil then
+		local atmosphere = Instance.new("Atmosphere")
+		atmosphere.Density = 0.35
+		atmosphere.Offset = 0.2
+		atmosphere.Color = Color3.fromRGB(255, 170, 120)
+		atmosphere.Decay = Color3.fromRGB(90, 60, 80)
+		atmosphere.Glare = 0.4
+		atmosphere.Haze = 1.6
+		atmosphere.Parent = Lighting
+	end
+	if Lighting:FindFirstChildOfClass("BloomEffect") == nil then
+		local bloom = Instance.new("BloomEffect")
+		bloom.Intensity = 0.6
+		bloom.Size = 24
+		bloom.Threshold = 1.6
+		bloom.Parent = Lighting
+	end
+	if Lighting:FindFirstChildOfClass("ColorCorrectionEffect") == nil then
+		local correction = Instance.new("ColorCorrectionEffect")
+		correction.Saturation = 0.1
+		correction.TintColor = Color3.fromRGB(255, 240, 225)
+		correction.Parent = Lighting
+	end
+	if Lighting:FindFirstChildOfClass("SunRaysEffect") == nil then
+		local rays = Instance.new("SunRaysEffect")
+		rays.Intensity = 0.05
+		rays.Parent = Lighting
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 광장 바탕
+--------------------------------------------------------------------------------
+
+local function buildGround(parent: Instance)
 	local lobby = World.LOBBY
-	local halfX = lobby.sizeX / 2
-	local halfZ = lobby.sizeZ / 2
-	local height = lobby.wallHeight
-	local thickness = 2
+	local halfX, halfZ = lobby.sizeX / 2, lobby.sizeZ / 2
 
-	local specs = {
-		{
-			name = "WallNorth",
-			size = Vector3.new(lobby.sizeX, height, thickness),
-			position = Vector3.new(0, height / 2, halfZ + thickness / 2),
-		},
-		{
-			name = "WallSouth",
-			size = Vector3.new(lobby.sizeX, height, thickness),
-			position = Vector3.new(0, height / 2, -halfZ - thickness / 2),
-		},
-		{
-			name = "WallEast",
-			size = Vector3.new(thickness, height, lobby.sizeZ),
-			position = Vector3.new(halfX + thickness / 2, height / 2, 0),
-		},
-		{
-			name = "WallWest",
-			size = Vector3.new(thickness, height, lobby.sizeZ),
-			position = Vector3.new(-halfX - thickness / 2, height / 2, 0),
-		},
+	block(parent, {
+		name = "Floor",
+		size = Vector3.new(lobby.sizeX, lobby.floorThickness, lobby.sizeZ),
+		cframe = at(0, -lobby.floorThickness / 2, 0),
+		color = W.stoneDark,
+		material = Enum.Material.Slate,
+	})
+
+	-- 낮은 돌담 + 그 위 보이지 않는 벽
+	local t = 2
+	local walls = {
+		{ Vector3.new(lobby.sizeX + 2 * t, 0, t), Vector3.new(0, 0, halfZ + t / 2) },
+		{ Vector3.new(lobby.sizeX + 2 * t, 0, t), Vector3.new(0, 0, -halfZ - t / 2) },
+		{ Vector3.new(t, 0, lobby.sizeZ), Vector3.new(halfX + t / 2, 0, 0) },
+		{ Vector3.new(t, 0, lobby.sizeZ), Vector3.new(-halfX - t / 2, 0, 0) },
 	}
+	for index, wall in walls do
+		local size, pos = wall[1], wall[2]
+		block(parent, {
+			name = `StoneWall{index}`,
+			size = Vector3.new(size.X, lobby.stoneWallHeight, size.Z),
+			cframe = at(pos.X, lobby.stoneWallHeight / 2, pos.Z),
+			color = W.stone,
+			material = Enum.Material.Slate,
+		})
+		block(parent, {
+			name = `Barrier{index}`,
+			size = Vector3.new(size.X, lobby.wallHeight, size.Z),
+			cframe = at(pos.X, lobby.stoneWallHeight + lobby.wallHeight / 2, pos.Z),
+			color = W.stone,
+			transparency = 1,
+			shadow = false,
+		})
+	end
 
-	for _, spec in specs do
-		local wall = makePart(parent, spec.name, spec.size, spec.position, COLOR_FLOOR)
-		wall.Transparency = 1
-		wall.CastShadow = false
+	-- 돌길 (밟아도 걸리지 않게 얇고 부딪힘 없음)
+	for index, path in World.PATHS do
+		local dx, dz = path.x2 - path.x1, path.z2 - path.z1
+		local length = math.sqrt(dx * dx + dz * dz)
+		local mid = Vector3.new((path.x1 + path.x2) / 2, 0.06, (path.z1 + path.z2) / 2)
+		block(parent, {
+			name = `Path{index}`,
+			size = Vector3.new(path.width, 0.12, length + path.width),
+			cframe = CFrame.lookAt(mid, mid + Vector3.new(dx, 0, dz)),
+			color = W.cobble,
+			material = Enum.Material.Cobblestone,
+			collide = false,
+			shadow = false,
+		})
 	end
 end
 
 local function buildSpawn(parent: Instance)
 	local lobby = World.LOBBY
+	local x, z = lobby.spawnX, lobby.spawnZ
 
 	local spawn = Instance.new("SpawnLocation")
 	spawn.Name = "LobbySpawn"
 	spawn.Anchored = true
-	spawn.Size = Vector3.new(lobby.spawnSize, 1, lobby.spawnSize)
-	spawn.Position = Vector3.new(lobby.spawnX, 0.5, lobby.spawnZ)
-	spawn.Color = COLOR_SPAWN
-	spawn.Material = Enum.Material.SmoothPlastic
+	spawn.Size = Vector3.new(12, 0.4, 12)
+	spawn.CFrame =
+		CFrame.lookAt(Vector3.new(x, 0.2, z), Vector3.new(World.FORGE.x, 0.2, World.FORGE.z))
+	spawn.Transparency = 1
 	spawn.Neutral = true
 	spawn.Duration = 0 -- 스폰 직후 보호막 없음
 	spawn.Parent = parent
+
+	-- 둥근 돌 원판 + 불꽃 테두리 + 모루 무늬
+	local flat = CFrame.Angles(0, 0, math.rad(90))
+	block(parent, {
+		name = "SpawnDisc",
+		size = Vector3.new(0.3, lobby.spawnSize, lobby.spawnSize),
+		cframe = at(x, 0.15, z) * flat,
+		color = W.stone,
+		material = Enum.Material.Slate,
+		shape = Enum.PartType.Cylinder,
+		collide = false,
+	})
+	block(parent, {
+		name = "SpawnRing",
+		size = Vector3.new(0.2, lobby.spawnSize + 1, lobby.spawnSize + 1),
+		cframe = at(x, 0.1, z) * flat,
+		color = W.ember,
+		material = Enum.Material.Neon,
+		shape = Enum.PartType.Cylinder,
+		collide = false,
+		transparency = 0.35,
+		shadow = false,
+	})
+	-- 모루 무늬 (윗판 · 허리 · 받침)
+	for _, piece in { { 6, 1.2, 1.4 }, { 1.6, 1.2, -0.2 }, { 4, 1.2, -1.6 } } do
+		block(parent, {
+			name = "SpawnMark",
+			size = Vector3.new(piece[1], 0.05, piece[2]),
+			cframe = at(x, 0.32, z + piece[3]),
+			color = W.ember,
+			material = Enum.Material.Neon,
+			collide = false,
+			transparency = 0.2,
+			shadow = false,
+		})
+	end
 end
 
--- 대장간 분위기를 내는 모루 모양 장식 (기능 없음)
-local function buildAnvil(parent: Instance)
-	local x, z = 0, 24
+local function buildTorch(parent: Instance, x: number, z: number, index: number)
+	local baseY = World.LOBBY.stoneWallHeight
+	block(parent, {
+		name = `TorchPost{index}`,
+		size = Vector3.new(0.6, 4, 0.6),
+		cframe = at(x, baseY + 2, z),
+		color = W.wood,
+		material = Enum.Material.Wood,
+	})
+	local bowl = block(parent, {
+		name = `TorchBowl{index}`,
+		size = Vector3.new(0.8, 1.6, 1.6),
+		cframe = at(x, baseY + 4.3, z) * CFrame.Angles(0, 0, math.rad(90)),
+		color = W.iron,
+		material = Enum.Material.Metal,
+		shape = Enum.PartType.Cylinder,
+	})
+	fire(bowl, 3, 6)
+	light(bowl, "TorchLight", W.ember, 14, 1.3)
+end
 
-	makePart(parent, "AnvilBase", Vector3.new(6, 1.5, 4), Vector3.new(x, 0.75, z), COLOR_ANVIL)
-	makePart(parent, "AnvilNeck", Vector3.new(3, 2, 2.5), Vector3.new(x, 2.5, z), COLOR_ANVIL)
-	local top =
-		makePart(parent, "AnvilTop", Vector3.new(9, 2, 4), Vector3.new(x, 4.5, z), COLOR_ANVIL)
-	top.Material = Enum.Material.Metal
+local function buildSigns(parent: Instance)
+	for index, sign in World.SIGNS do
+		local rotation = CFrame.Angles(0, math.rad(sign.facing), 0)
+		block(parent, {
+			name = `SignPost{index}`,
+			size = Vector3.new(0.5, 4, 0.5),
+			cframe = at(sign.x, 2, sign.z) * rotation,
+			color = W.wood,
+			material = Enum.Material.Wood,
+		})
+		local board = block(parent, {
+			name = `Sign{index}`,
+			size = Vector3.new(7, 2.2, 0.4),
+			cframe = at(sign.x, 4.6, sign.z) * rotation,
+			color = W.wood,
+			material = Enum.Material.WoodPlanks,
+		})
+		board:SetAttribute(World.ATTR.signKey, sign.key)
+	end
+end
+
+local function buildMountains(parent: Instance)
+	for index, mountain in World.MOUNTAINS do
+		-- 쐐기 두 개를 등지게 붙여 산마루 모양
+		for side = 0, 1 do
+			block(parent, {
+				name = `Mountain{index}`,
+				size = Vector3.new(mountain.width / 2, mountain.height, mountain.width * 0.6),
+				cframe = at(
+					mountain.x + (side - 0.5) * mountain.width / 2,
+					mountain.height / 2 - 4,
+					mountain.z
+				) * CFrame.Angles(0, math.rad(if side == 0 then 90 else -90), 0),
+				color = W.mountain,
+				material = Enum.Material.Slate,
+				shape = Enum.PartType.Wedge,
+				collide = false,
+				shadow = false,
+			})
+		end
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 모루 영감의 대장간
+--------------------------------------------------------------------------------
+
+local function buildNpc(parent: Instance)
+	local spec = World.FORGE.npc
+	local anvil = World.FORGE.anvil
+	local base = 1 -- 대장간 기단 윗면
+	-- 모루 쪽(+X)을 바라본다
+	local facing = CFrame.lookAt(Vector3.new(spec.x, 0, spec.z), Vector3.new(anvil.x, 0, anvil.z))
+	local function local_(x: number, y: number, z: number): CFrame
+		return CFrame.new(spec.x, base, spec.z) * (facing - facing.Position) * CFrame.new(x, y, z)
+	end
+
+	local npc = Instance.new("Model")
+	npc.Name = "AnvilElder"
+
+	block(npc, {
+		name = "LegL",
+		size = Vector3.new(0.9, 2, 0.9),
+		cframe = local_(-0.5, 1, 0),
+		color = W.iron,
+	})
+	block(npc, {
+		name = "LegR",
+		size = Vector3.new(0.9, 2, 0.9),
+		cframe = local_(0.5, 1, 0),
+		color = W.iron,
+	})
+	block(npc, {
+		name = "Torso",
+		size = Vector3.new(2.2, 2.2, 1.2),
+		cframe = local_(0, 3.1, 0),
+		color = W.apron,
+	})
+	block(npc, {
+		name = "Apron",
+		size = Vector3.new(1.8, 2.8, 0.2),
+		cframe = local_(0, 2.6, -0.7),
+		color = W.leather,
+		material = Enum.Material.Fabric,
+	})
+	local head = block(npc, {
+		name = "Head",
+		size = Vector3.new(1.4, 1.4, 1.4),
+		cframe = local_(0, 4.9, 0),
+		color = W.skin,
+	})
+	block(npc, {
+		name = "Beard",
+		size = Vector3.new(1.4, 1.2, 0.5),
+		cframe = local_(0, 4.25, -0.75) * CFrame.Angles(math.rad(180), 0, 0),
+		color = W.beard,
+		material = Enum.Material.Fabric,
+		shape = Enum.PartType.Wedge,
+	})
+	block(npc, {
+		name = "BrowL",
+		size = Vector3.new(0.5, 0.18, 0.2),
+		cframe = local_(-0.35, 5.25, -0.72),
+		color = W.beard,
+	})
+	block(npc, {
+		name = "BrowR",
+		size = Vector3.new(0.5, 0.18, 0.2),
+		cframe = local_(0.35, 5.25, -0.72),
+		color = W.beard,
+	})
+	block(npc, {
+		name = "Cap",
+		size = Vector3.new(1.5, 0.4, 1.5),
+		cframe = local_(0, 5.75, 0),
+		color = W.apron,
+		material = Enum.Material.Fabric,
+	})
+	block(npc, {
+		name = "ArmL",
+		size = Vector3.new(0.7, 2, 0.7),
+		cframe = local_(-1.45, 3.1, 0),
+		color = W.skin,
+	})
+
+	-- 망치 든 오른팔: 어깨를 축으로 돈다 (기기가 돌린다)
+	local arm = Instance.new("Model")
+	arm.Name = "HammerArm"
+	local shoulder = local_(1.45, 4.1, 0)
+	block(arm, {
+		name = "Arm",
+		size = Vector3.new(0.7, 2, 0.7),
+		cframe = shoulder * CFrame.new(0, -1, 0),
+		color = W.skin,
+	})
+	block(arm, {
+		name = "Haft",
+		size = Vector3.new(0.25, 2.2, 0.25),
+		cframe = shoulder * CFrame.new(0, -2, -0.9) * CFrame.Angles(math.rad(90), 0, 0),
+		color = W.wood,
+		material = Enum.Material.Wood,
+	})
+	block(arm, {
+		name = "HammerHead",
+		size = Vector3.new(0.6, 0.6, 1.1),
+		cframe = shoulder * CFrame.new(0, -2, -2),
+		color = W.iron,
+		material = Enum.Material.Metal,
+	})
+	arm.WorldPivot = shoulder
+	arm.Parent = npc
+
+	npc.PrimaryPart = head
+	npc.Parent = parent
+end
+
+local function buildForge(parent: Instance)
+	local spec = World.FORGE
+	local forge = folder(parent, "Forge")
+	local cx, cz = spec.x, spec.z
+	local hx, hz = spec.sizeX / 2, spec.sizeZ / 2
+
+	block(forge, {
+		name = "Base",
+		size = Vector3.new(spec.sizeX, 1, spec.sizeZ),
+		cframe = at(cx, 0.5, cz),
+		color = W.stone,
+		material = Enum.Material.Slate,
+	})
+
+	for _, corner in { { -1, -1 }, { 1, -1 }, { -1, 1 }, { 1, 1 } } do
+		block(forge, {
+			name = "Post",
+			size = Vector3.new(1.6, spec.postHeight, 1.6),
+			cframe = at(
+				cx + corner[1] * (hx - 1),
+				1 + spec.postHeight / 2,
+				cz + corner[2] * (hz - 1)
+			),
+			color = W.wood,
+			material = Enum.Material.Wood,
+		})
+	end
+
+	-- 뒷벽(북쪽)과 양옆 반쯤 막힌 벽
+	block(forge, {
+		name = "BackWall",
+		size = Vector3.new(spec.sizeX - 2, spec.postHeight, 1),
+		cframe = at(cx, 1 + spec.postHeight / 2, cz + hz - 1),
+		color = W.brick,
+		material = Enum.Material.Brick,
+	})
+	for side = -1, 1, 2 do
+		block(forge, {
+			name = "SideWall",
+			size = Vector3.new(1, spec.postHeight * 0.45, spec.sizeZ - 2),
+			cframe = at(cx + side * (hx - 1), 1 + spec.postHeight * 0.225, cz),
+			color = W.brick,
+			material = Enum.Material.Brick,
+		})
+	end
+
+	-- 지붕: 앞쪽으로 기운 판 + 마룻대
+	block(forge, {
+		name = "Roof",
+		size = Vector3.new(spec.sizeX + 4, 1, spec.sizeZ + 4),
+		cframe = at(cx, 1 + spec.postHeight + 1.2, cz) * CFrame.Angles(math.rad(-10), 0, 0),
+		color = W.roof,
+		material = Enum.Material.Slate,
+	})
+	block(forge, {
+		name = "RoofBeam",
+		size = Vector3.new(spec.sizeX + 5, 1.2, 1.2),
+		cframe = at(cx, 1 + spec.postHeight + 2.4, cz + hz + 1.2),
+		color = W.wood,
+		material = Enum.Material.Wood,
+	})
+
+	-- 화덕
+	local furnace = spec.furnace
+	block(forge, {
+		name = "Furnace",
+		size = Vector3.new(furnace.sizeX, furnace.sizeY, furnace.sizeZ),
+		cframe = at(furnace.x, 1 + furnace.sizeY / 2, furnace.z),
+		color = W.brick,
+		material = Enum.Material.Brick,
+	})
+	local mouth = block(forge, {
+		name = "FurnaceMouth",
+		size = Vector3.new(3.6, 2.4, 0.3),
+		cframe = at(furnace.x, 1 + 2.2, furnace.z - furnace.sizeZ / 2 - 0.1),
+		color = W.moltenHot,
+		material = Enum.Material.Neon,
+		collide = false,
+	})
+	light(mouth, "FurnaceLight", W.ember, 18, 2.2, true)
+	local flameHolder = block(forge, {
+		name = "FurnaceFlame",
+		size = Vector3.new(2, 1, 2),
+		cframe = at(furnace.x, 1 + 2.4, furnace.z - 1),
+		color = W.molten,
+		transparency = 1,
+		collide = false,
+		shadow = false,
+	})
+	fire(flameHolder, 4, 8, "FurnaceFire")
+
+	-- 굴뚝
+	local chimney = spec.chimney
+	local chimneyBottom = 1 + furnace.sizeY
+	local chimneyHeight = chimney.height - chimneyBottom
+	block(forge, {
+		name = "Chimney",
+		size = Vector3.new(chimney.size, chimneyHeight, chimney.size),
+		cframe = at(chimney.x, chimneyBottom + chimneyHeight / 2, chimney.z),
+		color = W.brick,
+		material = Enum.Material.Brick,
+	})
+	local top = block(forge, {
+		name = "ChimneyTop",
+		size = Vector3.new(chimney.size, 0.5, chimney.size),
+		cframe = at(chimney.x, chimney.height + 0.25, chimney.z),
+		color = W.iron,
+		material = Enum.Material.Metal,
+	})
+	local smoke = Instance.new("Smoke")
+	smoke.Color = Color3.fromRGB(150, 140, 145)
+	smoke.Opacity = 0.18
+	smoke.RiseVelocity = 4
+	smoke.Size = 3
+	smoke.Parent = top
+
+	-- 모루 (받침 · 허리 · 윗판 · 뿔)
+	local anvil = spec.anvil
+	block(forge, {
+		name = "AnvilBase",
+		size = Vector3.new(3, 1.2, 2),
+		cframe = at(anvil.x, 1.6, anvil.z),
+		color = W.iron,
+		material = Enum.Material.Metal,
+	})
+	block(forge, {
+		name = "AnvilWaist",
+		size = Vector3.new(1.4, 1.4, 1),
+		cframe = at(anvil.x, 2.9, anvil.z),
+		color = W.iron,
+		material = Enum.Material.Metal,
+	})
+	local anvilTop = block(forge, {
+		name = "AnvilTop",
+		size = Vector3.new(4.4, 1.2, 1.8),
+		cframe = at(anvil.x, 4.2, anvil.z),
+		color = W.iron,
+		material = Enum.Material.Metal,
+	})
+	block(forge, {
+		name = "AnvilHorn",
+		size = Vector3.new(1.8, 1.2, 1.6),
+		cframe = at(anvil.x + 3, 4.2, anvil.z) * CFrame.Angles(0, math.rad(-90), 0),
+		color = W.iron,
+		material = Enum.Material.Metal,
+		shape = Enum.PartType.Wedge,
+	})
+	sparks(anvilTop, "Sparks", W.gold)
+	light(anvilTop, "AnvilGlow", W.gold, 10, 0)
+
+	-- "강화하기" 근접 버튼. 글자는 기기가 플레이어 언어로 바꾼다.
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "ForgePrompt"
+	prompt.ActionText = ""
+	prompt.ObjectText = ""
+	prompt.HoldDuration = 0
+	prompt.MaxActivationDistance = spec.promptDistance
+	prompt.RequiresLineOfSight = false
+	prompt.KeyboardKeyCode = Enum.KeyCode.E
+	prompt.Parent = anvilTop
+	prompt.Triggered:Connect(function(player: Player)
+		if worldEvent then
+			worldEvent:FireClient(player, { kind = "openForge" })
+		end
+	end)
+
+	-- 연장 걸이와 물통
+	for index, x in { -8, -5, -2 } do
+		block(forge, {
+			name = `ToolHaft{index}`,
+			size = Vector3.new(0.3, 2.6, 0.3),
+			cframe = at(cx + x, 7, cz + hz - 1.7),
+			color = W.wood,
+			material = Enum.Material.Wood,
+		})
+		block(forge, {
+			name = `ToolHead{index}`,
+			size = Vector3.new(1.1, 0.6, 0.6),
+			cframe = at(cx + x, 8.2, cz + hz - 1.7),
+			color = W.iron,
+			material = Enum.Material.Metal,
+		})
+	end
+	block(forge, {
+		name = "QuenchTub",
+		size = Vector3.new(2, 3, 3),
+		cframe = at(cx - 11, 2, cz + 4) * CFrame.Angles(0, 0, math.rad(90)),
+		color = W.wood,
+		material = Enum.Material.WoodPlanks,
+		shape = Enum.PartType.Cylinder,
+	})
+	block(forge, {
+		name = "QuenchWater",
+		size = Vector3.new(0.1, 2.6, 2.6),
+		cframe = at(cx - 11, 3, cz + 4) * CFrame.Angles(0, 0, math.rad(90)),
+		color = W.glass,
+		material = Enum.Material.Glass,
+		shape = Enum.PartType.Cylinder,
+		transparency = 0.4,
+		collide = false,
+	})
+
+	buildNpc(forge)
+end
+
+--------------------------------------------------------------------------------
+-- 쇳물 관문
+--------------------------------------------------------------------------------
+
+local function buildGate(parent: Instance)
+	local spec = World.GATE
+	local gate = Instance.new("Model")
+	gate.Name = "Gate"
+
+	local half = spec.width / 2 - spec.pillarSize / 2
+	for side = -1, 1, 2 do
+		local x = spec.x + side * half
+		block(gate, {
+			name = "Pillar",
+			size = Vector3.new(spec.pillarSize, spec.pillarHeight, spec.pillarSize),
+			cframe = at(x, spec.pillarHeight / 2, spec.z),
+			color = W.stone,
+			material = Enum.Material.Slate,
+		})
+		for _, y in { 5, 12 } do
+			block(gate, {
+				name = "Band",
+				size = Vector3.new(spec.pillarSize + 0.4, 0.6, spec.pillarSize + 0.4),
+				cframe = at(x, y, spec.z),
+				color = W.iron,
+				material = Enum.Material.Metal,
+			})
+		end
+		local rune = block(gate, {
+			name = "Rune",
+			size = Vector3.new(0.3, 12, 0.6),
+			cframe = at(x - side * (spec.pillarSize / 2 + 0.1), 9, spec.z),
+			color = W.molten,
+			material = Enum.Material.Neon,
+			collide = false,
+			transparency = 0.5,
+			shadow = false,
+		})
+		light(rune, "RuneLight", W.molten, 10, 0.8)
+	end
+
+	block(gate, {
+		name = "Lintel",
+		size = Vector3.new(spec.width, 4, spec.pillarSize),
+		cframe = at(spec.x, spec.pillarHeight + 2, spec.z),
+		color = W.stone,
+		material = Enum.Material.Slate,
+	})
+	block(gate, {
+		name = "Board",
+		size = Vector3.new(14, 4, 0.4),
+		cframe = at(spec.x, spec.pillarHeight + 6.5, spec.z - 0.6),
+		color = W.wood,
+		material = Enum.Material.WoodPlanks,
+	})
+
+	-- 관문 뒤로 흘러내리는 쇳물 (네온 줄 3개, 밝기는 기기가 엇갈려 바꾼다)
+	block(gate, {
+		name = "FallWall",
+		size = Vector3.new(spec.width - 4, 16, 1),
+		cframe = at(spec.x, 8, spec.z + 3),
+		color = W.stoneDark,
+		material = Enum.Material.Slate,
+	})
+	for index, x in { -6, 0, 6 } do
+		local fall = block(gate, {
+			name = `MoltenFall{index}`,
+			size = Vector3.new(1.4, 16, 0.2),
+			cframe = at(spec.x + x, 8, spec.z + 2.4),
+			color = W.molten,
+			material = Enum.Material.Neon,
+			collide = false,
+			shadow = false,
+		})
+		if index == 2 then
+			local embers = sparks(fall, "Embers", W.moltenHot)
+			embers.Rate = 6
+			embers.Speed = NumberRange.new(1, 3)
+			embers.Acceleration = Vector3.new(0, 4, 0)
+		end
+	end
+
+	-- 바닥 원: 돌 원판 + 고리 12칸
+	local flat = CFrame.Angles(0, 0, math.rad(90))
+	block(gate, {
+		name = "RingDisc",
+		size = Vector3.new(0.25, spec.ringRadius * 2, spec.ringRadius * 2),
+		cframe = at(spec.ringX, 0.12, spec.ringZ) * flat,
+		color = W.stone,
+		material = Enum.Material.Slate,
+		shape = Enum.PartType.Cylinder,
+		collide = false,
+	})
+	for index = 1, spec.ringSegments do
+		local angle = (index - 0.5) / spec.ringSegments * math.pi * 2
+		local px = spec.ringX + math.sin(angle) * spec.ringRadius
+		local pz = spec.ringZ + math.cos(angle) * spec.ringRadius
+		local arc = 2 * math.pi * spec.ringRadius / spec.ringSegments
+		local segment = block(gate, {
+			name = "RingSegment",
+			size = Vector3.new(arc * 0.82, 0.25, 0.7),
+			cframe = CFrame.lookAt(
+				Vector3.new(px, 0.2, pz),
+				Vector3.new(spec.ringX, 0.2, spec.ringZ)
+			),
+			color = W.molten,
+			material = Enum.Material.Neon,
+			collide = false,
+			transparency = 0.5,
+			shadow = false,
+		})
+		segment:SetAttribute("Index", index)
+	end
+
+	gate:SetAttribute(World.ATTR.queueCount, 0)
+	gate:SetAttribute(World.ATTR.departAt, 0)
+	gate:SetAttribute(World.ATTR.launchAt, 0)
+	gate.Parent = parent
+	gateModel = gate
+end
+
+--------------------------------------------------------------------------------
+-- 풀무 러닝머신
+--------------------------------------------------------------------------------
+
+local function cylinderBetween(
+	parent: Instance,
+	name: string,
+	a: Vector3,
+	b: Vector3,
+	diameter: number
+)
+	local length = (b - a).Magnitude
+	if length < 0.01 then
+		return
+	end
+	local mid = (a + b) / 2
+	-- 원기둥의 축은 X 다: 두 점을 잇는 방향을 X 로 맞춘다
+	local look = CFrame.lookAt(mid, b) * CFrame.Angles(0, math.rad(90), 0)
+	block(parent, {
+		name = name,
+		size = Vector3.new(length, diameter, diameter),
+		cframe = look,
+		color = W.iron,
+		material = Enum.Material.Metal,
+		shape = Enum.PartType.Cylinder,
+		collide = false,
+	})
 end
 
 local function buildTreadmills(parent: Instance)
-	local folder = Instance.new("Folder")
-	folder.Name = World.TREADMILL_FOLDER
-
-	local padSize = World.TREADMILL_PAD
+	local treadmills = folder(parent, World.TREADMILL_FOLDER)
+	local padSpec = World.TREADMILL_PAD
 	local counts: { [string]: number } = {}
 
-	for _, spec in World.TREADMILL_PADS do
+	for padIndex, spec in World.TREADMILL_PADS do
 		counts[spec.tierId] = (counts[spec.tierId] or 0) + 1
 
-		local part = makePart(
-			folder,
-			`Treadmill_{spec.tierId}_{counts[spec.tierId]}`,
-			Vector3.new(padSize.sizeX, padSize.height, padSize.sizeZ),
-			Vector3.new(spec.x, padSize.height / 2, spec.z),
-			COLOR_PAD
-		)
-		part.Material = Enum.Material.Neon
-		part:SetAttribute(World.TREADMILL_TIER_ATTRIBUTE, spec.tierId)
+		local model = Instance.new("Model")
+		model.Name = `Treadmill_{spec.tierId}_{counts[spec.tierId]}`
+		model:SetAttribute("PadIndex", padIndex)
+
+		local h = padSpec.height
+		local pad = block(model, {
+			name = "Pad",
+			size = Vector3.new(padSpec.sizeX, h, padSpec.sizeZ),
+			cframe = at(spec.x, h / 2, spec.z),
+			color = W.iron,
+			material = Enum.Material.Metal,
+		})
+		pad:SetAttribute(World.TREADMILL_TIER_ATTRIBUTE, spec.tierId)
+		pad:SetAttribute(World.ATTR.occupied, false)
+		pad:SetAttribute(World.ATTR.paidAt, 0)
+
+		local beltLength = padSpec.sizeZ - 2
+		block(model, {
+			name = "Belt",
+			size = Vector3.new(padSpec.sizeX - 2, 0.12, beltLength),
+			cframe = at(spec.x, h + 0.06, spec.z),
+			color = { 20, 18, 22 },
+			material = Enum.Material.Slate,
+			collide = false,
+		})
+		for index = 1, padSpec.stripes do
+			local stripe = block(model, {
+				name = "BeltStripe",
+				size = Vector3.new(padSpec.sizeX - 2.2, 0.14, 0.45),
+				cframe = at(
+					spec.x,
+					h + 0.08,
+					spec.z - beltLength / 2 + (index - 0.5) * beltLength / padSpec.stripes
+				),
+				color = { 72, 74, 82 },
+				material = Enum.Material.Metal,
+				collide = false,
+				shadow = false,
+			})
+			stripe:SetAttribute("Index", index)
+		end
+
+		-- 난간 · 손잡이 · 계기판 (앞쪽 = 북쪽)
+		for side = -1, 1, 2 do
+			block(model, {
+				name = "Rail",
+				size = Vector3.new(0.5, 0.5, beltLength),
+				cframe = at(spec.x + side * (padSpec.sizeX / 2 - 0.4), h + 2.6, spec.z),
+				color = W.wood,
+				material = Enum.Material.Wood,
+			})
+			block(model, {
+				name = "RailPost",
+				size = Vector3.new(0.4, 2.6, 0.4),
+				cframe = at(
+					spec.x + side * (padSpec.sizeX / 2 - 0.4),
+					h + 1.3,
+					spec.z + beltLength / 2 - 0.3
+				),
+				color = W.wood,
+				material = Enum.Material.Wood,
+			})
+		end
+		block(model, {
+			name = "Handle",
+			size = Vector3.new(padSpec.sizeX - 0.4, 0.35, 0.35),
+			cframe = at(spec.x, h + 3.9, spec.z + beltLength / 2),
+			color = W.iron,
+			material = Enum.Material.Metal,
+			shape = Enum.PartType.Cylinder,
+		})
+		block(model, {
+			name = "Console",
+			size = Vector3.new(3, 1.4, 1.2),
+			cframe = at(spec.x, h + 4.2, spec.z + beltLength / 2 + 0.6)
+				* CFrame.Angles(math.rad(-25), 0, 0),
+			color = W.stoneDark,
+			material = Enum.Material.Metal,
+		})
+		local lamp = block(model, {
+			name = "Lamp",
+			size = Vector3.new(0.6, 0.6, 0.6),
+			cframe = at(spec.x, h + 4.8, spec.z + beltLength / 2 + 0.4),
+			color = W.gold,
+			material = Enum.Material.Neon,
+			shape = Enum.PartType.Ball,
+			collide = false,
+			transparency = 0.6,
+		})
+		lamp:SetAttribute("Base", 0.6)
+		sparks(lamp, "Coins", W.gold)
+
+		-- 풀무 (아코디언 3단) — 발판 동쪽
+		local bx = spec.x + padSpec.bellowsOffsetX
+		block(model, {
+			name = "BellowsBase",
+			size = Vector3.new(2.6, 0.6, 3.6),
+			cframe = at(bx, 0.3, spec.z),
+			color = W.wood,
+			material = Enum.Material.Wood,
+		})
+		for layer = 1, 3 do
+			local part = block(model, {
+				name = "BellowsLayer",
+				size = Vector3.new(2.4 - layer * 0.1, 0.7, 3.2 - layer * 0.15),
+				cframe = at(bx, 0.6 + 0.35 + (layer - 1) * 0.7, spec.z),
+				color = if layer % 2 == 0 then { 150, 106, 76 } else W.leather,
+				material = Enum.Material.Fabric,
+			})
+			part:SetAttribute("Layer", layer)
+		end
+
+		-- 풀무에서 큰 관까지 짧은 관
+		local path = World.pipePath(padIndex)
+		local y = World.PIPE.height
+		if #path >= 2 then
+			cylinderBetween(
+				model,
+				"Pipe",
+				Vector3.new(path[1][1], y, path[1][2]),
+				Vector3.new(path[2][1], y, path[2][2]),
+				World.PIPE.diameter
+			)
+		end
+
+		model.PrimaryPart = pad
+		model.Parent = treadmills
 	end
 
-	folder.Parent = parent
+	-- 큰 관 (남북) + 화덕으로 가는 관 (동쪽)
+	local zs: { number } = {}
+	for _, spec in World.TREADMILL_PADS do
+		table.insert(zs, spec.z)
+	end
+	table.insert(zs, World.PIPE.feedZ)
+	local minZ, maxZ = math.min(table.unpack(zs)), math.max(table.unpack(zs))
+	local y = World.PIPE.height
+	cylinderBetween(
+		parent,
+		"MainPipe",
+		Vector3.new(World.PIPE.mainX, y, minZ),
+		Vector3.new(World.PIPE.mainX, y, maxZ),
+		World.PIPE.diameter * 1.4
+	)
+	cylinderBetween(
+		parent,
+		"FeedPipe",
+		Vector3.new(World.PIPE.mainX, y, World.PIPE.feedZ),
+		Vector3.new(World.FORGE.x - World.FORGE.sizeX / 2, y, World.PIPE.feedZ),
+		World.PIPE.diameter * 1.4
+	)
 end
+
+--------------------------------------------------------------------------------
+-- 명예의 벽 · 진열대
+--------------------------------------------------------------------------------
+
+local function buildHonorWall(parent: Instance)
+	local spec = World.RANKING_WALL
+	local honor = folder(parent, "Honor")
+
+	block(honor, {
+		name = "HonorStone",
+		size = Vector3.new(2, spec.height, spec.width),
+		cframe = at(spec.x, spec.height / 2, spec.z),
+		color = W.stone,
+		material = Enum.Material.Slate,
+	})
+	-- 액자 (위·아래·양옆)
+	local frameX = spec.x - 1.1
+	for _, piece in
+		{
+			{ spec.width + 0.8, spec.height - 0.6 },
+			{ spec.width + 0.8, 0.6 },
+		}
+	do
+		block(honor, {
+			name = "HonorFrame",
+			size = Vector3.new(0.4, 0.5, piece[1]),
+			cframe = at(frameX, piece[2], spec.z),
+			color = W.wood,
+			material = Enum.Material.Wood,
+		})
+	end
+	for side = -1, 1, 2 do
+		block(honor, {
+			name = "HonorFrame",
+			size = Vector3.new(0.4, spec.height - 0.6, 0.5),
+			cframe = at(frameX, spec.height / 2, spec.z + side * (spec.width / 2 + 0.15)),
+			color = W.wood,
+			material = Enum.Material.Wood,
+		})
+	end
+	block(honor, {
+		name = "HonorBoard",
+		size = Vector3.new(0.2, spec.height - 1.6, spec.width - 0.6),
+		cframe = at(frameX - 0.05, spec.height / 2, spec.z),
+		color = W.stoneDark,
+		material = Enum.Material.SmoothPlastic,
+	})
+	-- 양옆 횃불
+	for index, side in { -1, 1 } do
+		local z = spec.z + side * (spec.width / 2 + 2)
+		block(honor, {
+			name = "HonorTorchPost",
+			size = Vector3.new(0.6, 6, 0.6),
+			cframe = at(spec.x - 1.5, 3, z),
+			color = W.wood,
+			material = Enum.Material.Wood,
+		})
+		local bowl = block(honor, {
+			name = `HonorTorch{index}`,
+			size = Vector3.new(0.8, 1.6, 1.6),
+			cframe = at(spec.x - 1.5, 6.3, z) * CFrame.Angles(0, 0, math.rad(90)),
+			color = W.iron,
+			material = Enum.Material.Metal,
+			shape = Enum.PartType.Cylinder,
+		})
+		fire(bowl, 3, 6)
+		light(bowl, "TorchLight", W.ember, 12, 1.1)
+	end
+end
+
+local function buildShowcase(parent: Instance)
+	local spec = World.SHOWCASE
+	local showcase = folder(parent, "Showcase")
+
+	local base = block(showcase, {
+		name = "ShowcaseBase",
+		size = Vector3.new(4, 3, 4),
+		cframe = at(spec.x, 1.5, spec.z),
+		color = W.stone,
+		material = Enum.Material.Slate,
+	})
+	block(showcase, {
+		name = "ShowcaseGlass",
+		size = Vector3.new(3.4, 5.6, 3.4),
+		cframe = at(spec.x, 3 + 2.8, spec.z),
+		color = W.glass,
+		material = Enum.Material.Glass,
+		transparency = 0.75,
+	})
+	block(showcase, {
+		name = "ShowcaseCap",
+		size = Vector3.new(3.8, 0.4, 3.8),
+		cframe = at(spec.x, 3 + 5.8, spec.z),
+		color = W.iron,
+		material = Enum.Material.Metal,
+	})
+	block(showcase, {
+		name = "ShowcasePlaque",
+		size = Vector3.new(0.2, 1.2, 3.4),
+		cframe = at(spec.x - 2.1, 1.8, spec.z),
+		color = W.gold,
+		material = Enum.Material.Metal,
+	})
+	light(base, "ShowcaseLight", W.gold, 10, 0.8)
+	base:SetAttribute(World.ATTR.ownerName, "")
+	base:SetAttribute(World.ATTR.swordId, "")
+	base:SetAttribute(World.ATTR.swordLevel, 0)
+	showcaseBase = base
+end
+
+--------------------------------------------------------------------------------
 
 local function buildLobby(): Folder
-	local lobby = World.LOBBY
+	local lobby = Instance.new("Folder")
+	lobby.Name = World.LOBBY_FOLDER
 
-	local folder = Instance.new("Folder")
-	folder.Name = World.LOBBY_FOLDER
+	buildGround(lobby)
+	buildSpawn(lobby)
+	for index, torch in World.TORCHES do
+		buildTorch(lobby, torch.x, torch.z, index)
+	end
+	buildSigns(lobby)
+	buildMountains(lobby)
+	buildForge(lobby)
+	buildGate(lobby)
+	buildTreadmills(lobby)
+	buildHonorWall(lobby)
+	buildShowcase(lobby)
 
-	makePart(
-		folder,
-		"Floor",
-		Vector3.new(lobby.sizeX, lobby.floorThickness, lobby.sizeZ),
-		Vector3.new(0, -lobby.floorThickness / 2, 0),
-		COLOR_FLOOR
-	)
-
-	buildWalls(folder)
-	buildSpawn(folder)
-	buildAnvil(folder)
-	buildTreadmills(folder)
-
-	folder.Parent = Workspace
-	return folder
+	lobby:SetAttribute(World.ATTR.treadmillUsers, 0)
+	lobby.Parent = Workspace
+	return lobby
 end
 
--- 로비 폴더에서 트레드밀 발판을 찾아 목록으로 만든다(직접 지은 로비든 Studio 에서 꾸민 로비든 같다).
-local function collectPads(lobbyFolder: Instance)
+-- 로비 폴더에서 러닝머신 발판을 찾는다 (직접 지은 로비든 Studio 에서 꾸민 로비든 같다).
+-- 발판은 TreadmillTier 속성이 있는 파트다. 모델 안에 "Pad" 로 있어도 되고 폴더 바로 아래 있어도 된다.
+local function collectPads(lobby: Instance)
 	pads = {}
 
-	local folder = lobbyFolder:FindFirstChild(World.TREADMILL_FOLDER)
-	if folder == nil then
+	local treadmills = lobby:FindFirstChild(World.TREADMILL_FOLDER)
+	if treadmills == nil then
 		warn(
-			"[WorldService] 로비에 Treadmills 폴더가 없습니다. 트레드밀이 동작하지 않습니다."
+			"[WorldService] 로비에 Treadmills 폴더가 없습니다. 러닝머신이 동작하지 않습니다."
 		)
 		return
 	end
 
-	for _, child in folder:GetChildren() do
-		if not child:IsA("BasePart") then
+	for _, child in treadmills:GetChildren() do
+		local part: Instance? = child
+		if child:IsA("Model") then
+			part = child:FindFirstChild("Pad")
+		end
+		if part == nil or not part:IsA("BasePart") then
 			continue
 		end
 
-		local tierId = child:GetAttribute(World.TREADMILL_TIER_ATTRIBUTE)
+		local tierId = part:GetAttribute(World.TREADMILL_TIER_ATTRIBUTE)
 		local tier = if type(tierId) == "string" then EconomyConfig.treadmillTier(tierId) else nil
 		if tier == nil then
 			warn(
-				`[WorldService] 트레드밀 발판 {child.Name} 의 단계를 알 수 없습니다`
+				`[WorldService] 러닝머신 발판 {child.Name} 의 단계를 알 수 없습니다`
 			)
 			continue
 		end
 
 		table.insert(pads, {
-			part = child,
+			part = part,
 			tier = tier,
 			bounds = {
-				x = child.Position.X,
-				z = child.Position.Z,
-				sizeX = child.Size.X,
-				sizeZ = child.Size.Z,
-				topY = child.Position.Y + child.Size.Y / 2,
+				x = part.Position.X,
+				z = part.Position.Z,
+				sizeX = part.Size.X,
+				sizeZ = part.Size.Z,
+				topY = part.Position.Y + part.Size.Y / 2,
 				reach = World.TREADMILL_PAD.reach,
 			},
 		})
@@ -8045,44 +10129,86 @@ function WorldService.getTreadmillPads(): { TreadmillPad }
 	return pads
 end
 
--- 경주 코스를 담는 폴더 (Workspace/Races)
-function WorldService.getRacesFolder(): Folder
-	local folder = racesFolder
-	if folder == nil then
-		folder = Instance.new("Folder")
-		folder.Name = World.RACES_FOLDER
-		folder.Parent = Workspace
-		racesFolder = folder
-	end
-	return folder
+function WorldService.getLobby(): Instance?
+	return lobbyFolder
 end
 
--- 캐릭터를 로비 스폰 근처로 옮긴다. 캐릭터가 없으면 false.
-function WorldService.teleportToLobby(player: Player): boolean
+-- 쇳물 관문 모델 (Studio 에서 꾸민 로비에 없으면 nil)
+function WorldService.getGate(): Model?
+	return gateModel
+end
+
+-- 서버 최고 검 진열대의 받침 (없으면 nil)
+function WorldService.getShowcaseBase(): BasePart?
+	return showcaseBase
+end
+
+-- 경주 코스를 담는 폴더 (Workspace/Races)
+function WorldService.getRacesFolder(): Folder
+	local f = racesFolder
+	if f == nil then
+		f = Instance.new("Folder")
+		f.Name = World.RACES_FOLDER
+		f.Parent = Workspace
+		racesFolder = f
+	end
+	return f
+end
+
+local function teleport(
+	player: Player,
+	x: number,
+	z: number,
+	scatter: number,
+	lookAt: Vector3?
+): boolean
 	local character = player.Character
 	if character == nil then
 		return false
 	end
-
-	local lobby = World.LOBBY
-	local scatter = lobby.spawnScatter
-
 	local position = Vector3.new(
-		lobby.spawnX + rng:NextNumber(-scatter, scatter),
+		x + rng:NextNumber(-scatter, scatter),
 		1 + World.COURSE.spawnHeight,
-		lobby.spawnZ + rng:NextNumber(-scatter, scatter)
+		z + rng:NextNumber(-scatter, scatter)
 	)
-
-	character:PivotTo(CFrame.new(position))
+	local target = lookAt or Vector3.new(World.FORGE.x, position.Y, World.FORGE.z)
+	character:PivotTo(CFrame.lookAt(position, Vector3.new(target.X, position.Y, target.Z)))
 	return true
+end
+
+-- 캐릭터를 로비 스폰 근처로 옮긴다. 캐릭터가 없으면 false.
+function WorldService.teleportToLobby(player: Player): boolean
+	local lobby = World.LOBBY
+	return teleport(player, lobby.spawnX, lobby.spawnZ, lobby.spawnScatter, nil)
+end
+
+-- 경주에서 돌아올 때: 관문 앞 (바로 다시 참가하기 쉽게)
+function WorldService.teleportToReturnPoint(player: Player): boolean
+	local point = World.RETURN_POINT
+	return teleport(
+		player,
+		point.x,
+		point.z,
+		point.scatter,
+		Vector3.new(World.GATE.ringX, 0, World.GATE.ringZ)
+	)
 end
 
 function WorldService.Init()
 	setupCollisionGroup()
+	setupLighting()
+
+	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
+	worldEvent = remotesFolder:WaitForChild(Remotes.Events.WorldEvent) :: RemoteEvent
 
 	local existing = Workspace:FindFirstChild(World.LOBBY_FOLDER)
-	local lobbyFolder = if existing then existing else buildLobby()
-	collectPads(lobbyFolder)
+	local lobby = if existing then existing else buildLobby()
+	lobbyFolder = lobby
+	if existing then
+		local gate = existing:FindFirstChild("Gate")
+		gateModel = if gate and gate:IsA("Model") then gate else nil
+	end
+	collectPads(lobby)
 
 	WorldService.getRacesFolder()
 
@@ -8101,11 +10227,11 @@ return WorldService
           </Properties>
         </Item>
       </Item>
-      <Item class="Folder" referent="45">
+      <Item class="Folder" referent="48">
         <Properties>
           <string name="Name">vendor</string>
         </Properties>
-        <Item class="ModuleScript" referent="46">
+        <Item class="ModuleScript" referent="49">
           <Properties>
             <string name="Name">ProfileStore</string>
             <string name="Source">--[[
@@ -10356,32 +12482,32 @@ return ProfileStore</string>
       </Item>
     </Item>
   </Item>
-  <Item class="ServerStorage" referent="47">
+  <Item class="ServerStorage" referent="50">
     <Properties>
       <string name="Name">ServerStorage</string>
     </Properties>
   </Item>
-  <Item class="SoundService" referent="48">
+  <Item class="SoundService" referent="51">
     <Properties>
       <string name="Name">SoundService</string>
       <bool name="RespectFilteringEnabled">true</bool>
     </Properties>
   </Item>
-  <Item class="StarterGui" referent="49">
+  <Item class="StarterGui" referent="52">
     <Properties>
       <string name="Name">StarterGui</string>
       <token name="ScreenOrientation">2</token>
     </Properties>
   </Item>
-  <Item class="StarterPlayer" referent="50">
+  <Item class="StarterPlayer" referent="53">
     <Properties>
       <string name="Name">StarterPlayer</string>
     </Properties>
-    <Item class="StarterPlayerScripts" referent="51">
+    <Item class="StarterPlayerScripts" referent="54">
       <Properties>
         <string name="Name">StarterPlayerScripts</string>
       </Properties>
-      <Item class="LocalScript" referent="52">
+      <Item class="LocalScript" referent="55">
         <Properties>
           <string name="Name">Client</string>
           <string name="Source"><![CDATA[--!strict
@@ -10412,6 +12538,7 @@ local CONTROLLER_ORDER = {
 	"LobbyController",
 	"RaceController",
 	"UIController",
+	"WorldFxController",
 }
 
 local controllersFolder = script:WaitForChild("controllers")
@@ -10451,7 +12578,7 @@ runStage("Init", controllers)
 runStage("Start", controllers)
 ]]></string>
         </Properties>
-        <Item class="ModuleScript" referent="53">
+        <Item class="ModuleScript" referent="56">
           <Properties>
             <string name="Name">ClientState</string>
             <string name="Source"><![CDATA[--!strict
@@ -10571,11 +12698,11 @@ return ClientState
 ]]></string>
           </Properties>
         </Item>
-        <Item class="Folder" referent="54">
+        <Item class="Folder" referent="57">
           <Properties>
             <string name="Name">controllers</string>
           </Properties>
-          <Item class="ModuleScript" referent="55">
+          <Item class="ModuleScript" referent="58">
             <Properties>
               <string name="Name">CollectionController</string>
               <string name="Source"><![CDATA[--!strict
@@ -10948,7 +13075,7 @@ return CollectionController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="56">
+          <Item class="ModuleScript" referent="59">
             <Properties>
               <string name="Name">EffectsController</string>
               <string name="Source"><![CDATA[--!strict
@@ -11294,7 +13421,7 @@ return EffectsController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="57">
+          <Item class="ModuleScript" referent="60">
             <Properties>
               <string name="Name">FeedController</string>
               <string name="Source"><![CDATA[--!strict
@@ -11537,7 +13664,7 @@ return FeedController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="58">
+          <Item class="ModuleScript" referent="61">
             <Properties>
               <string name="Name">HudController</string>
               <string name="Source"><![CDATA[--!strict
@@ -11698,7 +13825,7 @@ return HudController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="59">
+          <Item class="ModuleScript" referent="62">
             <Properties>
               <string name="Name">LobbyController</string>
               <string name="Source"><![CDATA[--!strict
@@ -12061,7 +14188,7 @@ return LobbyController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="60">
+          <Item class="ModuleScript" referent="63">
             <Properties>
               <string name="Name">OddsTableController</string>
               <string name="Source"><![CDATA[--!strict
@@ -12320,7 +14447,7 @@ return OddsTableController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="61">
+          <Item class="ModuleScript" referent="64">
             <Properties>
               <string name="Name">RaceController</string>
               <string name="Source"><![CDATA[--!strict
@@ -13065,7 +15192,7 @@ return RaceController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="62">
+          <Item class="ModuleScript" referent="65">
             <Properties>
               <string name="Name">ShopController</string>
               <string name="Source"><![CDATA[--!strict
@@ -13497,7 +15624,7 @@ return ShopController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="63">
+          <Item class="ModuleScript" referent="66">
             <Properties>
               <string name="Name">SoundController</string>
               <string name="Source"><![CDATA[--!strict
@@ -13565,7 +15692,7 @@ return SoundController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="64">
+          <Item class="ModuleScript" referent="67">
             <Properties>
               <string name="Name">SwordController</string>
               <string name="Source"><![CDATA[--!strict
@@ -14110,7 +16237,7 @@ return SwordController
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="65">
+          <Item class="ModuleScript" referent="68">
             <Properties>
               <string name="Name">UIController</string>
               <string name="Source"><![CDATA[--!strict
@@ -14810,6 +16937,15 @@ function UIController.getPreviewSlot(): Frame
 	return previewSlot
 end
 
+-- 지금 화면에 보이는 레벨 (강화 연출 중에는 공개 전 레벨). 미리보기 검 색을 맞추는 데 쓴다.
+function UIController.getDisplayLevel(): number
+	if revealLevel then
+		return revealLevel
+	end
+	local sword = ClientState.getEquipped()
+	return if sword then sword.level else 0
+end
+
 function UIController.Start()
 	-- 접속 직후 현재 상태를 한 번 받아 온다 (프로필 로드가 아직 끝나지 않았을 수 있어 잠시 재시도).
 	task.spawn(function()
@@ -14841,12 +16977,1359 @@ return UIController
 ]]></string>
             </Properties>
           </Item>
+          <Item class="ModuleScript" referent="69">
+            <Properties>
+              <string name="Name">WorldFxController</string>
+              <string name="Source"><![CDATA[--!strict
+--[[
+	WorldFxController — 불씨 광장과 쇳물 수로의 움직임·글자 (통합 기획서 8-2절, 시안 "움직임 목록").
+
+	서버는 블록과 "상태 속성"만 만든다. 이 컨트롤러가 각 기기에서:
+	  광장  모루 영감 망치질(2.4초) + 모루 불티 / 화덕 흔들림, 러닝머신 인원만큼 불이 커짐 / 횃불 흔들림 /
+	        풀무 러닝머신: 벨트 흐름·풀무 펌프·관 속 불씨·지급 때 금화와 "+100" / 발판 위 안내판 /
+	        쇳물 관문: 고리 12칸 숨쉬기·카운트다운·마지막 3초·출발 빛기둥, 전광판, 쇳물 폭포 /
+	        표지판 글자 / 명예의 벽 / 최고 검 진열대 회전·명패 / 15강·20강 자랑 연출과 모루 영감 말풍선 /
+	        "강화하기" 근접 버튼 / 내 캐릭터가 태어날 때 불티
+	  코스  출발 화로 3·2·1 / 출발 쇠창살 내려감 / 쇳물 해일의 출렁이는 꼭대기·끓는 앞면·녹은 바닥
+	  화면  대장간 화면의 3D 검 미리보기 (천천히 돈다)
+	전부 보기만 하는 장식이다. 판정·보상과 관계없다. 카메라가 광장에서 멀면 광장 연출을 멈춘다.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Locale = require(Shared:WaitForChild("Locale"))
+local Remotes = require(Shared:WaitForChild("Remotes"))
+local SwordModel = require(Shared:WaitForChild("SwordModel"))
+local Format = require(Shared:WaitForChild("Pure"):WaitForChild("Format"))
+
+local ConfigFolder = Shared:WaitForChild("Config")
+local World = require(ConfigFolder:WaitForChild("World"))
+local Palette = require(ConfigFolder:WaitForChild("Palette"))
+local Weapons = require(ConfigFolder:WaitForChild("Weapons"))
+local EconomyConfig = require(ConfigFolder:WaitForChild("EconomyConfig"))
+local RaceConfig = require(ConfigFolder:WaitForChild("RaceConfig"))
+
+local client = script.Parent.Parent
+local ClientState = require(client:WaitForChild("ClientState"))
+local ui = client:WaitForChild("ui")
+local Theme = require(ui:WaitForChild("Theme"))
+local ScreenManager = require(ui:WaitForChild("ScreenManager"))
+
+local controllers = script.Parent
+local UIController = require(controllers:WaitForChild("UIController"))
+
+local WorldFxController = {}
+WorldFxController.Name = "WorldFxController"
+
+local A = World.ATTR
+local LOBBY_RANGE = 220 -- 카메라가 광장 가운데에서 이보다 멀면 광장 연출을 멈춘다
+local HAMMER_CYCLE = 2.4
+
+local function rgb(values: { number }): Color3
+	return Color3.fromRGB(values[1], values[2], values[3])
+end
+
+local function serverNow(): number
+	return Workspace:GetServerTimeNow()
+end
+
+-- 연출용 부품을 담는 이 기기 전용 폴더
+local fxFolder = Instance.new("Folder")
+fxFolder.Name = "ForgeLocalFx"
+
+local lobby: Instance? = nil
+local textRefreshers: { () -> () } = {} -- 언어가 바뀌면 다시 그릴 글자들
+
+--------------------------------------------------------------------------------
+-- 공용
+--------------------------------------------------------------------------------
+
+local function surfaceText(
+	part: BasePart,
+	face: Enum.NormalId,
+	pixelsPerStud: number
+): (SurfaceGui, Frame)
+	local gui = Instance.new("SurfaceGui")
+	gui.Name = "ForgeText"
+	gui.Face = face
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = pixelsPerStud
+	gui.LightInfluence = 0
+	gui.Adornee = part
+	gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+
+	local holder = Instance.new("Frame")
+	holder.BackgroundTransparency = 1
+	holder.Size = UDim2.fromScale(1, 1)
+	holder.Parent = gui
+	return gui, holder
+end
+
+local function textLabel(
+	parent: Instance,
+	text: string,
+	color: Color3,
+	font: Enum.Font,
+	size: UDim2,
+	position: UDim2?
+): TextLabel
+	local label = Instance.new("TextLabel")
+	label.BackgroundTransparency = 1
+	label.Size = size
+	label.Position = position or UDim2.new()
+	label.Font = font
+	label.TextScaled = true
+	label.TextColor3 = color
+	label.Text = text
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = Color3.new(0, 0, 0)
+	stroke.Thickness = 2
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Contextual
+	stroke.Parent = label
+	label.Parent = parent
+	return label
+end
+
+-- 세계 위에 떠올랐다 사라지는 글자 ("+100")
+local function floatWorldText(at: BasePart, text: string, color: Color3)
+	local billboard = Instance.new("BillboardGui")
+	billboard.Adornee = at
+	billboard.Size = UDim2.fromOffset(160, 50)
+	billboard.StudsOffset = Vector3.new(0, 3, 0)
+	billboard.AlwaysOnTop = true
+	billboard.MaxDistance = 80
+	billboard.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+	local label = textLabel(billboard, text, color, Theme.font.display, UDim2.fromScale(1, 1))
+
+	local tween = TweenService:Create(
+		billboard,
+		TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{
+			StudsOffset = Vector3.new(0, 7, 0),
+		}
+	)
+	TweenService:Create(label, TweenInfo.new(1.2), { TextTransparency = 1 }):Play()
+	tween.Completed:Connect(function()
+		billboard:Destroy()
+	end)
+	tween:Play()
+end
+
+local function lobbyNearby(): boolean
+	local camera = Workspace.CurrentCamera
+	return camera ~= nil and camera.Focus.Position.Magnitude < LOBBY_RANGE
+end
+
+--------------------------------------------------------------------------------
+-- 모루 영감 · 화덕 · 횃불
+--------------------------------------------------------------------------------
+
+type Forge = {
+	arm: Model?,
+	armBase: CFrame?,
+	anvilSparks: ParticleEmitter?,
+	anvilGlow: PointLight?,
+	furnaceLight: PointLight?,
+	furnaceFire: Fire?,
+	chimneyTop: BasePart?,
+	head: BasePart?,
+	bubble: BillboardGui?,
+	bubbleText: TextLabel?,
+	flareUntil: number,
+	lastStrikeCycle: number,
+}
+
+local forge: Forge = { flareUntil = 0, lastStrikeCycle = -1 }
+local torches: { { light: PointLight, base: number } } = {}
+
+local function setupForge(lobbyFolder: Instance)
+	local forgeFolder = lobbyFolder:FindFirstChild("Forge")
+	if forgeFolder == nil then
+		return
+	end
+
+	local npc = forgeFolder:FindFirstChild("AnvilElder")
+	local arm = if npc then npc:FindFirstChild("HammerArm") else nil
+	if arm and arm:IsA("Model") then
+		forge.arm = arm
+		forge.armBase = arm:GetPivot()
+	end
+	local head = if npc then npc:FindFirstChild("Head") else nil
+	if head and head:IsA("BasePart") then
+		forge.head = head
+		local bubble = Instance.new("BillboardGui")
+		bubble.Adornee = head
+		bubble.Size = UDim2.fromOffset(260, 70)
+		bubble.StudsOffset = Vector3.new(0, 3.2, 0)
+		bubble.MaxDistance = 140
+		bubble.Enabled = false
+		bubble.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+		local frame = Instance.new("Frame")
+		frame.BackgroundColor3 = Theme.color.text
+		frame.Size = UDim2.fromScale(1, 1)
+		frame.Parent = bubble
+		local corner = Instance.new("UICorner")
+		corner.CornerRadius = UDim.new(0, 12)
+		corner.Parent = frame
+		local label = Instance.new("TextLabel")
+		label.BackgroundTransparency = 1
+		label.Size = UDim2.new(1, -16, 1, -8)
+		label.Position = UDim2.fromOffset(8, 4)
+		label.Font = Theme.font.bodyBold
+		label.TextScaled = true
+		label.TextWrapped = true
+		label.TextColor3 = Theme.color.ink
+		label.Parent = frame
+		forge.bubble = bubble
+		forge.bubbleText = label
+	end
+
+	local anvilTop = forgeFolder:FindFirstChild("AnvilTop")
+	if anvilTop then
+		local emitter = anvilTop:FindFirstChild("Sparks")
+		forge.anvilSparks = if emitter and emitter:IsA("ParticleEmitter") then emitter else nil
+		local glow = anvilTop:FindFirstChild("AnvilGlow")
+		forge.anvilGlow = if glow and glow:IsA("PointLight") then glow else nil
+
+		-- "강화하기" 근접 버튼: 글자를 내 언어로, 누르면 대장간 화면
+		local prompt = anvilTop:FindFirstChild("ForgePrompt")
+		if prompt and prompt:IsA("ProximityPrompt") then
+			local function refreshPrompt()
+				local language = ClientState.getLanguage()
+				prompt.ActionText = Locale.get(language, "world.prompt.forge")
+				prompt.ObjectText = Locale.get(language, "world.prompt.object")
+				prompt.Enabled = ScreenManager.getMode() == "lobby"
+			end
+			refreshPrompt()
+			table.insert(textRefreshers, refreshPrompt)
+			ScreenManager.onStateChanged(refreshPrompt)
+			prompt.Triggered:Connect(function()
+				ScreenManager.setForgeOpen(true)
+			end)
+		end
+	end
+
+	local mouth = forgeFolder:FindFirstChild("FurnaceMouth")
+	local furnaceLight = if mouth then mouth:FindFirstChild("FurnaceLight") else nil
+	forge.furnaceLight = if furnaceLight and furnaceLight:IsA("PointLight")
+		then furnaceLight
+		else nil
+	local flame = forgeFolder:FindFirstChild("FurnaceFlame")
+	local furnaceFire = if flame then flame:FindFirstChild("FurnaceFire") else nil
+	forge.furnaceFire = if furnaceFire and furnaceFire:IsA("Fire") then furnaceFire else nil
+	local chimneyTop = forgeFolder:FindFirstChild("ChimneyTop")
+	forge.chimneyTop = if chimneyTop and chimneyTop:IsA("BasePart") then chimneyTop else nil
+
+	for _, descendant in lobbyFolder:GetDescendants() do
+		if descendant:IsA("PointLight") and descendant.Name == "TorchLight" then
+			table.insert(torches, { light = descendant, base = descendant.Brightness })
+		end
+	end
+end
+
+local function say(text: string, seconds: number)
+	local bubble, label = forge.bubble, forge.bubbleText
+	if bubble == nil or label == nil then
+		return
+	end
+	label.Text = text
+	bubble.Enabled = true
+	local token = os.clock()
+	bubble:SetAttribute("Token", token)
+	task.delay(seconds, function()
+		if bubble:GetAttribute("Token") == token then
+			bubble.Enabled = false
+		end
+	end)
+end
+
+-- 망치질: 들어 올리고(0.6초) 빠르게 내려치고(0.12초) 쉰다
+local function hammerAngle(t: number): number
+	local rest, raised = 25, 110
+	if t < 0.6 then
+		local p = t / 0.6
+		return rest + (raised - rest) * (1 - (1 - p) ^ 2)
+	elseif t < 0.72 then
+		local p = (t - 0.6) / 0.12
+		return raised + (rest - raised) * p * p
+	end
+	return rest
+end
+
+local furnaceSize = 4
+local lastFlicker = 0
+
+local function stepForge(now: number, dt: number)
+	local arm, base = forge.arm, forge.armBase
+	if arm and base then
+		local cycle = math.floor(now / HAMMER_CYCLE)
+		local t = now - cycle * HAMMER_CYCLE
+		arm:PivotTo(base * CFrame.Angles(math.rad(hammerAngle(t)), 0, 0))
+
+		if t >= 0.72 and forge.lastStrikeCycle ~= cycle then
+			forge.lastStrikeCycle = cycle
+			if forge.anvilSparks then
+				forge.anvilSparks:Emit(12)
+			end
+			local glow = forge.anvilGlow
+			if glow then
+				glow.Brightness = 2.5
+				TweenService:Create(glow, TweenInfo.new(0.25), { Brightness = 0 }):Play()
+			end
+		end
+	end
+
+	-- 화덕: 러닝머신 위 인원만큼 커지고, 자랑 연출 중에는 크게 치솟는다
+	local users = 0
+	local lobbyFolder = lobby
+	if lobbyFolder then
+		users = tonumber(lobbyFolder:GetAttribute(A.treadmillUsers)) or 0
+	end
+	local target = 4 + math.min(4, users) * 1.5
+	if now < forge.flareUntil then
+		target *= 2
+	end
+	furnaceSize += (target - furnaceSize) * math.min(1, dt * 1.5)
+
+	local fire = forge.furnaceFire
+	if fire then
+		fire.Size = furnaceSize
+	end
+
+	if now - lastFlicker > 0.12 then
+		lastFlicker = now
+		local light = forge.furnaceLight
+		if light then
+			light.Range = 16 + furnaceSize * 1.6
+			light.Brightness = (1.8 + furnaceSize * 0.08) * (0.85 + math.random() * 0.3)
+		end
+		for _, torch in torches do
+			torch.light.Brightness = torch.base * (0.8 + math.random() * 0.4)
+		end
+	end
+end
+
+-- 20강: 굴뚝에서 흰·금 불기둥 5초
+local function chimneyPillar()
+	local top = forge.chimneyTop
+	if top == nil then
+		return
+	end
+	local pillar = Instance.new("Part")
+	pillar.Anchored = true
+	pillar.CanCollide = false
+	pillar.CanQuery = false
+	pillar.CanTouch = false
+	pillar.CastShadow = false
+	pillar.Material = Enum.Material.Neon
+	pillar.Color = Color3.fromRGB(255, 244, 200)
+	pillar.Shape = Enum.PartType.Cylinder
+	local height = 60
+	local base = top.Position + Vector3.new(0, 0.5, 0)
+	local function frameFor(h: number): CFrame
+		return CFrame.new(base + Vector3.new(0, h / 2, 0)) * CFrame.Angles(0, 0, math.rad(90))
+	end
+	pillar.Size = Vector3.new(0.1, 3, 3)
+	pillar.CFrame = frameFor(0.1)
+	pillar.Parent = fxFolder
+
+	local up = TweenService:Create(
+		pillar,
+		TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{
+			Size = Vector3.new(height, 3, 3),
+			CFrame = frameFor(height),
+		}
+	)
+	up:Play()
+	task.delay(5.5, function()
+		local fade = TweenService:Create(pillar, TweenInfo.new(1), { Transparency = 1 })
+		fade.Completed:Connect(function()
+			pillar:Destroy()
+		end)
+		fade:Play()
+	end)
+end
+
+-- 서버 공지(15강 이상 성공)를 받으면 광장 연출
+local function onBroadcast(payload: any)
+	local level = tonumber(payload.level) or 0
+	local language = ClientState.getLanguage()
+	local name = tostring(payload.playerName)
+	local weapon = Locale.get(language, tostring(payload.weaponKey))
+
+	forge.flareUntil = os.clock() + 2.3
+	if level >= 20 then
+		say(Locale.get(language, "npc.shout.max", name, weapon), 4)
+		chimneyPillar()
+	else
+		say(Locale.get(language, "npc.shout.high", name, weapon, level), 3)
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 풀무 러닝머신
+--------------------------------------------------------------------------------
+
+type Treadmill = {
+	index: number,
+	pad: BasePart,
+	stripes: { BasePart },
+	stripeBase: { CFrame },
+	bellows: { { part: BasePart, size: Vector3, cframe: CFrame, layer: number } },
+	lamp: BasePart?,
+	coins: ParticleEmitter?,
+	lastPaid: number,
+	phase: number,
+	nextEmber: number,
+}
+
+local treadmills: { Treadmill } = {}
+local beltLength = World.TREADMILL_PAD.sizeZ - 2
+
+local function setupTreadmills(lobbyFolder: Instance)
+	local folder = lobbyFolder:FindFirstChild(World.TREADMILL_FOLDER)
+	if folder == nil then
+		return
+	end
+
+	for _, model in folder:GetChildren() do
+		if not model:IsA("Model") then
+			continue
+		end
+		local pad = model:FindFirstChild("Pad")
+		if pad == nil or not pad:IsA("BasePart") then
+			continue
+		end
+
+		local entry: Treadmill = {
+			index = tonumber(model:GetAttribute("PadIndex")) or 0,
+			pad = pad,
+			stripes = {},
+			stripeBase = {},
+			bellows = {},
+			lamp = nil,
+			coins = nil,
+			lastPaid = tonumber(pad:GetAttribute(A.paidAt)) or 0,
+			phase = 0,
+			nextEmber = 0,
+		}
+		for _, child in model:GetChildren() do
+			if child:IsA("BasePart") then
+				if child.Name == "BeltStripe" then
+					table.insert(entry.stripes, child)
+				elseif child.Name == "BellowsLayer" then
+					table.insert(entry.bellows, {
+						part = child,
+						size = child.Size,
+						cframe = child.CFrame,
+						layer = tonumber(child:GetAttribute("Layer")) or 1,
+					})
+				elseif child.Name == "Lamp" then
+					entry.lamp = child
+					local coins = child:FindFirstChild("Coins")
+					entry.coins = if coins and coins:IsA("ParticleEmitter") then coins else nil
+				end
+			end
+		end
+		table.sort(entry.stripes, function(a, b)
+			return (tonumber(a:GetAttribute("Index")) or 0)
+				< (tonumber(b:GetAttribute("Index")) or 0)
+		end)
+		for index, stripe in entry.stripes do
+			entry.stripeBase[index] = stripe.CFrame
+		end
+
+		-- 발판 위 안내판 (내 언어로)
+		local tierId = pad:GetAttribute(World.TREADMILL_TIER_ATTRIBUTE)
+		local tier = if type(tierId) == "string" then EconomyConfig.treadmillTier(tierId) else nil
+		if tier then
+			local billboard = Instance.new("BillboardGui")
+			billboard.Adornee = pad
+			billboard.Size = UDim2.fromOffset(220, 56)
+			billboard.StudsOffset = Vector3.new(0, 8, 0)
+			billboard.MaxDistance = 120
+			billboard.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+			local frame = Instance.new("Frame")
+			frame.BackgroundColor3 = Theme.color.bg
+			frame.BackgroundTransparency = 0.25
+			frame.Size = UDim2.fromScale(1, 1)
+			frame.Parent = billboard
+			local corner = Instance.new("UICorner")
+			corner.CornerRadius = UDim.new(0, 10)
+			corner.Parent = frame
+			local label = textLabel(
+				frame,
+				"",
+				Theme.color.gold,
+				Theme.font.bodyBold,
+				UDim2.new(1, -12, 1, -8),
+				UDim2.fromOffset(6, 4)
+			)
+			local function refresh()
+				label.Text = Locale.get(
+					ClientState.getLanguage(),
+					"ui.treadmill.label",
+					tier.intervalSeconds,
+					Format.comma(tier.gold)
+				)
+			end
+			refresh()
+			table.insert(textRefreshers, refresh)
+		end
+
+		table.insert(treadmills, entry)
+	end
+end
+
+-- 관을 따라 화덕으로 굴러가는 불씨 구슬
+local function sendEmber(index: number)
+	local path = World.pipePath(index)
+	if #path < 2 then
+		return
+	end
+	local y = World.PIPE.height + 0.4
+	local ball = Instance.new("Part")
+	ball.Shape = Enum.PartType.Ball
+	ball.Size = Vector3.new(0.7, 0.7, 0.7)
+	ball.Anchored = true
+	ball.CanCollide = false
+	ball.CanQuery = false
+	ball.CanTouch = false
+	ball.CastShadow = false
+	ball.Material = Enum.Material.Neon
+	ball.Color = rgb(Palette.WORLD.moltenHot)
+	ball.Position = Vector3.new(path[1][1], y, path[1][2])
+	ball.Parent = fxFolder
+
+	task.spawn(function()
+		for step = 2, #path do
+			local target = Vector3.new(path[step][1], y, path[step][2])
+			local distance = (target - ball.Position).Magnitude
+			local tween = TweenService:Create(
+				ball,
+				TweenInfo.new(distance / 16, Enum.EasingStyle.Linear),
+				{ Position = target }
+			)
+			tween:Play()
+			tween.Completed:Wait()
+		end
+		ball:Destroy()
+	end)
+end
+
+local function stepTreadmills(now: number, dt: number)
+	local server = serverNow()
+	for _, entry in treadmills do
+		local occupied = entry.pad:GetAttribute(A.occupied) == true
+
+		if occupied then
+			-- 벨트 줄무늬가 뒤로(-Z) 흐른다: 0.45초에 한 칸
+			entry.phase = (entry.phase + dt / 0.45) % #entry.stripes
+			local spacing = beltLength / math.max(1, #entry.stripes)
+			for index, stripe in entry.stripes do
+				local base = entry.stripeBase[index]
+				local offset = -((entry.phase * spacing) % beltLength)
+				local localZ = (base.Position.Z - entry.pad.Position.Z) + offset
+				if localZ < -beltLength / 2 then
+					localZ += beltLength
+				end
+				stripe.CFrame =
+					CFrame.new(base.Position.X, base.Position.Y, entry.pad.Position.Z + localZ)
+			end
+
+			-- 풀무: 0.9초 주기로 접혔다 펴진다
+			local squeeze = 0.55 + 0.45 * (0.5 + 0.5 * math.cos(now / 0.9 * math.pi * 2))
+			for _, layer in entry.bellows do
+				local height = layer.size.Y * squeeze
+				local baseY = layer.cframe.Position.Y
+					- layer.size.Y / 2
+					- (layer.layer - 1) * layer.size.Y
+				layer.part.Size = Vector3.new(layer.size.X, height, layer.size.Z)
+				layer.part.CFrame = CFrame.new(
+					layer.cframe.Position.X,
+					baseY + (layer.layer - 0.5) * height,
+					layer.cframe.Position.Z
+				)
+			end
+
+			if now >= entry.nextEmber then
+				entry.nextEmber = now + 1.6
+				sendEmber(entry.index)
+			end
+
+			local lamp = entry.lamp
+			if lamp then
+				lamp.Transparency = 0.15 + 0.15 * math.sin(now * 4)
+			end
+		else
+			local lamp = entry.lamp
+			if lamp then
+				lamp.Transparency = 0.6
+			end
+		end
+
+		-- 지급 순간: 계기판 번쩍 + 금화 + "+100" (주변 모두에게 보인다)
+		local paidAt = tonumber(entry.pad:GetAttribute(A.paidAt)) or 0
+		if paidAt > entry.lastPaid then
+			entry.lastPaid = paidAt
+			if server - paidAt < 3 then
+				local lamp = entry.lamp
+				if lamp then
+					lamp.Transparency = 0
+					if entry.coins then
+						entry.coins:Emit(10)
+					end
+				end
+				local tierId = entry.pad:GetAttribute(World.TREADMILL_TIER_ATTRIBUTE)
+				local tier = if type(tierId) == "string"
+					then EconomyConfig.treadmillTier(tierId)
+					else nil
+				floatWorldText(
+					entry.pad,
+					"+" .. Format.comma(if tier then tier.gold else 0),
+					Theme.color.gold
+				)
+			end
+		end
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 쇳물 관문
+--------------------------------------------------------------------------------
+
+type Gate = {
+	model: Model,
+	segments: { BasePart },
+	runes: { BasePart },
+	falls: { BasePart },
+	boardLabel: TextLabel?,
+	ringCenter: Vector3,
+	lastLaunch: number,
+}
+
+local gate: Gate? = nil
+
+local function setupGate(lobbyFolder: Instance)
+	local model = lobbyFolder:FindFirstChild("Gate")
+	if model == nil or not model:IsA("Model") then
+		return
+	end
+
+	local entry: Gate = {
+		model = model,
+		segments = {},
+		runes = {},
+		falls = {},
+		boardLabel = nil,
+		ringCenter = Vector3.new(World.GATE.ringX, 0.3, World.GATE.ringZ),
+		lastLaunch = tonumber(model:GetAttribute(A.launchAt)) or 0,
+	}
+	for _, child in model:GetChildren() do
+		if child:IsA("BasePart") then
+			if child.Name == "RingSegment" then
+				table.insert(entry.segments, child)
+			elseif child.Name == "Rune" then
+				table.insert(entry.runes, child)
+			elseif string.sub(child.Name, 1, 10) == "MoltenFall" then
+				table.insert(entry.falls, child)
+			elseif child.Name == "Board" then
+				local _, holder = surfaceText(child, Enum.NormalId.Front, 30)
+				local background = Instance.new("Frame")
+				background.BackgroundColor3 = Theme.color.bg
+				background.BackgroundTransparency = 0.1
+				background.Size = UDim2.fromScale(1, 1)
+				background.Parent = holder
+				entry.boardLabel = textLabel(
+					holder,
+					"",
+					Theme.color.gold,
+					Theme.font.display,
+					UDim2.new(1, -20, 1, -16),
+					UDim2.fromOffset(10, 8)
+				)
+			end
+		end
+	end
+	table.sort(entry.segments, function(a, b)
+		return (tonumber(a:GetAttribute("Index")) or 0) < (tonumber(b:GetAttribute("Index")) or 0)
+	end)
+	gate = entry
+end
+
+local function launchPillar(center: Vector3)
+	local pillar = Instance.new("Part")
+	pillar.Anchored = true
+	pillar.CanCollide = false
+	pillar.CanQuery = false
+	pillar.CanTouch = false
+	pillar.CastShadow = false
+	pillar.Material = Enum.Material.Neon
+	pillar.Color = rgb(Palette.WORLD.moltenHot)
+	pillar.Shape = Enum.PartType.Cylinder
+	pillar.Size = Vector3.new(0.2, World.GATE.ringRadius * 2, World.GATE.ringRadius * 2)
+	pillar.CFrame = CFrame.new(center) * CFrame.Angles(0, 0, math.rad(90))
+	pillar.Transparency = 0.3
+	pillar.Parent = fxFolder
+
+	local height = 30
+	local up = TweenService:Create(
+		pillar,
+		TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+		{
+			Size = Vector3.new(height, World.GATE.ringRadius * 2, World.GATE.ringRadius * 2),
+			CFrame = CFrame.new(center + Vector3.new(0, height / 2, 0))
+				* CFrame.Angles(0, 0, math.rad(90)),
+		}
+	)
+	up.Completed:Connect(function()
+		local fade = TweenService:Create(pillar, TweenInfo.new(0.4), { Transparency = 1 })
+		fade.Completed:Connect(function()
+			pillar:Destroy()
+		end)
+		fade:Play()
+	end)
+	up:Play()
+end
+
+local function stepGate(now: number)
+	local entry = gate
+	if entry == nil then
+		return
+	end
+	local language = ClientState.getLanguage()
+	local count = tonumber(entry.model:GetAttribute(A.queueCount)) or 0
+	local departAt = tonumber(entry.model:GetAttribute(A.departAt)) or 0
+	local remaining = math.max(0, departAt - serverNow())
+	local window = RaceConfig.MATCH_WINDOW_SECONDS
+	local molten = rgb(Palette.WORLD.molten)
+	local hot = rgb(Palette.WORLD.moltenHot)
+
+	if count > 0 and departAt > 0 then
+		-- 대기 중: 남은 시간만큼 고리가 켜져 있고 한 칸씩 꺼진다
+		local lit = math.ceil(remaining / window * #entry.segments)
+		local finalSeconds = remaining <= RaceConfig.LINEUP_SECONDS
+		for index, segment in entry.segments do
+			local on = index <= lit
+			segment.Transparency = if on then 0.05 else 0.85
+			segment.Color = if finalSeconds then Color3.new(1, 0.92, 0.75) else hot
+		end
+		for _, rune in entry.runes do
+			rune.Transparency = if finalSeconds then 0 else 0.15
+		end
+		if entry.boardLabel then
+			entry.boardLabel.Text = Locale.get(
+				language,
+				"world.board.queue",
+				math.ceil(remaining),
+				count,
+				RaceConfig.MATCH_FULL_COUNT
+			)
+		end
+	else
+		-- 대기 없음: 천천히 숨 쉰다 (2.6초)
+		local breathe = 0.5 + 0.5 * math.sin(now / 2.6 * math.pi * 2)
+		for _, segment in entry.segments do
+			segment.Transparency = 0.35 + 0.45 * breathe
+			segment.Color = molten
+		end
+		for _, rune in entry.runes do
+			rune.Transparency = 0.2 + 0.5 * breathe
+		end
+		if entry.boardLabel then
+			entry.boardLabel.Text = Locale.get(language, "world.board.idle")
+		end
+	end
+
+	-- 쇳물 폭포: 줄마다 다른 박자로 밝기가 바뀐다
+	for index, fall in entry.falls do
+		fall.Transparency = 0.1 + 0.35 * (0.5 + 0.5 * math.sin(now * (1.6 + index * 0.4) + index))
+	end
+
+	local launchAt = tonumber(entry.model:GetAttribute(A.launchAt)) or 0
+	if launchAt > entry.lastLaunch then
+		entry.lastLaunch = launchAt
+		if serverNow() - launchAt < 3 then
+			launchPillar(entry.ringCenter)
+		end
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 표지판 · 명예의 벽 · 진열대
+--------------------------------------------------------------------------------
+
+local function setupSigns(lobbyFolder: Instance)
+	for _, child in lobbyFolder:GetChildren() do
+		if child:IsA("BasePart") and child:GetAttribute(A.signKey) then
+			local key = tostring(child:GetAttribute(A.signKey))
+			local _, holder = surfaceText(child, Enum.NormalId.Front, 30)
+			local label = textLabel(
+				holder,
+				"",
+				Theme.color.gold,
+				Theme.font.display,
+				UDim2.new(1, -16, 1, -12),
+				UDim2.fromOffset(8, 6)
+			)
+			local function refresh()
+				label.Text = Locale.get(ClientState.getLanguage(), key)
+			end
+			refresh()
+			table.insert(textRefreshers, refresh)
+		end
+	end
+end
+
+local honorRows: { TextLabel } = {}
+local honorTitle: TextLabel? = nil
+local boardRemote: RemoteFunction? = nil
+
+local function refreshHonor()
+	local title = honorTitle
+	local remote = boardRemote
+	if title == nil or remote == nil then
+		return
+	end
+	local language = ClientState.getLanguage()
+	title.Text = Locale.get(language, "world.honor.title")
+
+	local ok, entries = pcall(function()
+		return remote:InvokeServer("level")
+	end)
+	local list = if ok and type(entries) == "table" then entries else {}
+
+	for index, row in honorRows do
+		local entry = list[index]
+		if entry then
+			row.Text = `{entry.rank}. {entry.name}   +{entry.value}`
+			row.TextColor3 = Theme.heatColor(tonumber(entry.value) or 0)
+		elseif index == 1 then
+			row.Text = Locale.get(language, "world.honor.empty")
+			row.TextColor3 = Theme.color.muted
+		else
+			row.Text = ""
+		end
+	end
+end
+
+local function setupHonor(lobbyFolder: Instance)
+	local honor = lobbyFolder:FindFirstChild("Honor")
+	local board = if honor then honor:FindFirstChild("HonorBoard") else nil
+	if board == nil or not board:IsA("BasePart") then
+		return
+	end
+	local _, holder = surfaceText(board, Enum.NormalId.Left, 24)
+	honorTitle = textLabel(
+		holder,
+		"",
+		Theme.color.gold,
+		Theme.font.display,
+		UDim2.new(1, -20, 0.14, 0),
+		UDim2.new(0, 10, 0.02, 0)
+	)
+	for index = 1, 10 do
+		local row = textLabel(
+			holder,
+			"",
+			Theme.color.text,
+			Theme.font.bodyBold,
+			UDim2.new(1, -40, 0.07, 0),
+			UDim2.new(0, 20, 0.18 + (index - 1) * 0.08, 0)
+		)
+		row.TextXAlignment = Enum.TextXAlignment.Left
+		honorRows[index] = row
+	end
+	table.insert(textRefreshers, function()
+		task.spawn(refreshHonor)
+	end)
+
+	task.spawn(function()
+		while true do
+			refreshHonor()
+			task.wait(60)
+		end
+	end)
+end
+
+type Showcase = {
+	base: BasePart,
+	folder: Instance,
+	plaque: TextLabel?,
+	sword: Model?,
+	pivot: CFrame?,
+	lastLevel: number,
+}
+local showcase: Showcase? = nil
+
+local function refreshShowcaseText()
+	local entry = showcase
+	if entry == nil or entry.plaque == nil then
+		return
+	end
+	local language = ClientState.getLanguage()
+	local owner = tostring(entry.base:GetAttribute(A.ownerName) or "")
+	local swordId = tostring(entry.base:GetAttribute(A.swordId) or "")
+	local level = tonumber(entry.base:GetAttribute(A.swordLevel)) or 0
+	local info = Weapons.get(swordId)
+	local plaque = entry.plaque :: TextLabel
+	if owner == "" or info == nil then
+		plaque.Text = Locale.get(language, "world.showcase.empty")
+	else
+		plaque.Text = Locale.get(language, "world.showcase.title")
+			.. "\n"
+			.. Locale.get(
+				language,
+				"world.showcase.line",
+				owner,
+				Locale.get(language, info.nameKey),
+				level
+			)
+	end
+	plaque.TextColor3 = Theme.heatColor(level)
+end
+
+local function setupShowcase(lobbyFolder: Instance)
+	local folder = lobbyFolder:FindFirstChild("Showcase")
+	local base = if folder then folder:FindFirstChild("ShowcaseBase") else nil
+	local plaquePart = if folder then folder:FindFirstChild("ShowcasePlaque") else nil
+	if folder == nil or base == nil or not base:IsA("BasePart") then
+		return
+	end
+
+	local entry: Showcase = {
+		base = base,
+		folder = folder,
+		plaque = nil,
+		sword = nil,
+		pivot = nil,
+		lastLevel = tonumber(base:GetAttribute(A.swordLevel)) or 0,
+	}
+	if plaquePart and plaquePart:IsA("BasePart") then
+		local _, holder = surfaceText(plaquePart, Enum.NormalId.Left, 40)
+		local label = textLabel(
+			holder,
+			"",
+			Theme.color.gold,
+			Theme.font.bodyBold,
+			UDim2.new(1, -8, 1, -6),
+			UDim2.fromOffset(4, 3)
+		)
+		label.TextWrapped = true
+		entry.plaque = label
+	end
+	showcase = entry
+
+	local function track(child: Instance)
+		if child:IsA("Model") and child.Name == "ShowcaseSword" then
+			entry.sword = child
+			entry.pivot = child:GetPivot()
+		end
+	end
+	for _, child in folder:GetChildren() do
+		track(child)
+	end
+	folder.ChildAdded:Connect(track)
+
+	base:GetAttributeChangedSignal(A.swordLevel):Connect(function()
+		local level = tonumber(base:GetAttribute(A.swordLevel)) or 0
+		if level > entry.lastLevel and level > 0 then
+			say(Locale.get(ClientState.getLanguage(), "npc.shout.record"), 3)
+		end
+		entry.lastLevel = level
+		refreshShowcaseText()
+	end)
+	base:GetAttributeChangedSignal(A.ownerName):Connect(refreshShowcaseText)
+	refreshShowcaseText()
+	table.insert(textRefreshers, refreshShowcaseText)
+end
+
+local function stepShowcase(now: number)
+	local entry = showcase
+	if entry == nil then
+		return
+	end
+	local sword, pivot = entry.sword, entry.pivot
+	if sword and pivot and sword.Parent ~= nil then
+		sword:PivotTo(
+			pivot
+				* CFrame.new(0, 0.3 * math.sin(now / 3 * math.pi * 2), 0)
+				* CFrame.Angles(0, now / 8 * math.pi * 2, 0)
+		)
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 코스: 출발 화로 · 쇠창살 · 쇳물 해일 장식
+--------------------------------------------------------------------------------
+
+type Course = {
+	id: number,
+	folder: Instance?,
+	chaser: BasePart?,
+	crests: { BasePart },
+	front: BasePart?,
+	trail: BasePart?,
+	goAt: number,
+	started: boolean,
+}
+
+local course: Course? = nil
+
+local function localPart(color: Color3, size: Vector3, shape: Enum.PartType?): Part
+	local part = Instance.new("Part")
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.CanTouch = false
+	part.CastShadow = false
+	part.Material = Enum.Material.Neon
+	part.Color = color
+	part.Size = size
+	part.Shape = shape or Enum.PartType.Block
+	part.Parent = fxFolder
+	return part
+end
+
+local function clearCourse()
+	local current = course
+	if current == nil then
+		return
+	end
+	for _, crest in current.crests do
+		crest:Destroy()
+	end
+	if current.front then
+		current.front:Destroy()
+	end
+	if current.trail then
+		current.trail:Destroy()
+	end
+	course = nil
+end
+
+local function findCourseFolder(id: number): Instance?
+	local races = Workspace:FindFirstChild(World.RACES_FOLDER)
+	return if races then races:FindFirstChild(`{World.RACE_FOLDER_PREFIX}{id}`) else nil
+end
+
+local function onRaceUpdate(payload: any)
+	if type(payload) ~= "table" then
+		return
+	end
+	if payload.kind == "lineup" then
+		clearCourse()
+		local crests: { BasePart } = {}
+		for _ = 1, 5 do
+			table.insert(
+				crests,
+				localPart(rgb(Palette.WORLD.moltenHot), Vector3.new(9, 9, 9), Enum.PartType.Ball)
+			)
+		end
+		course = {
+			id = tonumber(payload.raceId) or 0,
+			folder = nil,
+			chaser = nil,
+			crests = crests,
+			front = localPart(Color3.fromRGB(255, 224, 112), Vector3.new(1, 1, 1)),
+			trail = localPart(rgb(Palette.WORLD.molten), Vector3.new(1, 0.2, 1)),
+			goAt = os.clock() + (tonumber(payload.countdown) or 0),
+			started = false,
+		}
+	elseif payload.kind == "start" then
+		local current = course
+		if current and current.folder then
+			current.started = true
+			for _, child in current.folder:GetChildren() do
+				if child:IsA("BasePart") and child.Name == "StartBar" then
+					TweenService:Create(
+						child,
+						TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+						{
+							CFrame = child.CFrame - Vector3.new(0, 9, 0),
+						}
+					):Play()
+				end
+			end
+		end
+	elseif payload.kind == "lobby" then
+		clearCourse()
+	end
+end
+
+local function stepCourse(now: number)
+	local current = course
+	if current == nil then
+		return
+	end
+
+	if current.folder == nil or current.folder.Parent == nil then
+		current.folder = findCourseFolder(current.id)
+		local folder = current.folder
+		if folder then
+			local chaser = folder:FindFirstChild(World.CHASER_NAME)
+			current.chaser = if chaser and chaser:IsA("BasePart") then chaser else nil
+		end
+	end
+	local folder = current.folder
+	if folder == nil then
+		return
+	end
+
+	-- 출발 화로: 남은 3·2·1초에 하나씩 켜진다
+	if not current.started then
+		local left = current.goAt - now
+		for index = 1, 3 do
+			local bowl = folder:FindFirstChild(`StartBrazier{index}`)
+			local flame = if bowl then bowl:FindFirstChild("CountFire") else nil
+			if flame and flame:IsA("Fire") then
+				local shouldBurn = left <= (4 - index)
+				if flame.Enabled ~= shouldBurn then
+					flame.Enabled = shouldBurn
+				end
+			end
+		end
+	end
+
+	-- 쇳물 해일 장식: 출렁이는 꼭대기, 끓는 앞면, 지나간 자리의 녹은 바닥
+	local chaser = current.chaser
+	if chaser and chaser.Parent ~= nil then
+		local size = chaser.Size
+		local front = chaser.Position.Z + size.Z / 2
+		local topY = chaser.Position.Y + size.Y / 2
+		local floorY = chaser.Position.Y - size.Y / 2
+		for index, crest in current.crests do
+			local x = chaser.Position.X - size.X / 2 + (index - 0.5) * size.X / #current.crests
+			local bob = math.sin(now * (2 * math.pi / (1.1 + index * 0.1)) + index) * 2
+			crest.Position = Vector3.new(x, topY + bob, chaser.Position.Z)
+		end
+		local hot = current.front
+		if hot then
+			hot.Size = Vector3.new(size.X, size.Y, 1)
+			hot.CFrame = CFrame.new(chaser.Position.X, chaser.Position.Y, front + 0.5)
+			hot.Transparency = 0.25 + 0.2 * math.sin(now * 9)
+		end
+		local trail = current.trail
+		if trail then
+			local startZ = front - 200
+			local length = math.max(1, front - startZ)
+			trail.Size = Vector3.new(size.X - 4, 0.2, length)
+			trail.CFrame = CFrame.new(chaser.Position.X, floorY + 0.15, startZ + length / 2)
+		end
+	end
+end
+
+--------------------------------------------------------------------------------
+-- 대장간 화면의 3D 검 미리보기
+--------------------------------------------------------------------------------
+
+local previewFrame: ViewportFrame? = nil
+local previewModel: Model? = nil
+local previewSignature = ""
+local previewLength = 4
+
+local function setupPreview()
+	local slot = UIController.getPreviewSlot()
+	local frame = Instance.new("ViewportFrame")
+	frame.Name = "SwordPreview"
+	frame.BackgroundTransparency = 1
+	frame.Size = UDim2.fromScale(1, 0.82)
+	frame.Ambient = Color3.fromRGB(150, 130, 130)
+	frame.LightColor = Color3.fromRGB(255, 220, 190)
+	frame.LightDirection = Vector3.new(-1, -1, -1)
+	frame.Parent = slot
+
+	local camera = Instance.new("Camera")
+	camera.FieldOfView = 40
+	camera.Parent = frame
+	frame.CurrentCamera = camera
+	previewFrame = frame
+end
+
+local function refreshPreview()
+	local frame = previewFrame
+	if frame == nil then
+		return
+	end
+	local sword = ClientState.getEquipped()
+	if sword == nil then
+		return
+	end
+	local level = UIController.getDisplayLevel()
+	local signature = `{sword.id}:{level}`
+	if signature == previewSignature then
+		return
+	end
+	previewSignature = signature
+
+	local old = previewModel
+	if old then
+		old:Destroy()
+	end
+	local model = SwordModel.build(
+		sword.id,
+		level,
+		{ cframe = CFrame.new(), anchored = true, effects = false }
+	)
+	model.Parent = frame
+	previewModel = model
+	previewLength = SwordModel.length(sword.id)
+
+	local camera = frame.CurrentCamera
+	if camera then
+		local center = Vector3.new(0, previewLength * 0.42, 0)
+		camera.CFrame = CFrame.lookAt(center + Vector3.new(0, 0, previewLength * 2.1), center)
+	end
+end
+
+local function stepPreview(now: number)
+	local model = previewModel
+	if model == nil or ScreenManager.getMode() ~= "forge" then
+		return
+	end
+	-- 비스듬히 세워 천천히 돈다
+	local center = CFrame.new(0, previewLength * 0.42, 0)
+	model:PivotTo(
+		center
+			* CFrame.Angles(0, now * 0.8, math.rad(-28))
+			* CFrame.new(0, -previewLength * 0.42, 0)
+	)
+end
+
+--------------------------------------------------------------------------------
+-- 내 캐릭터가 태어날 때 불티
+--------------------------------------------------------------------------------
+
+local function spawnSparkle(character: Model)
+	local root = character:WaitForChild("HumanoidRootPart", 10)
+	if root == nil or not root:IsA("BasePart") then
+		return
+	end
+	local emitter = Instance.new("ParticleEmitter")
+	emitter.Color = ColorSequence.new(rgb(Palette.WORLD.ember))
+	emitter.LightEmission = 1
+	emitter.Rate = 0
+	emitter.Lifetime = NumberRange.new(0.4, 0.6)
+	emitter.Speed = NumberRange.new(8, 12)
+	emitter.SpreadAngle = Vector2.new(180, 10)
+	emitter.Size = NumberSequence.new(0.25, 0)
+	emitter.EmissionDirection = Enum.NormalId.Bottom
+	emitter.Parent = root
+	emitter:Emit(30)
+	task.delay(1.5, function()
+		emitter:Destroy()
+	end)
+end
+
+--------------------------------------------------------------------------------
+
+local lastLanguage = ""
+
+function WorldFxController.Init()
+	fxFolder.Parent = Workspace
+	setupPreview()
+
+	local remotesFolder = ReplicatedStorage:WaitForChild(Remotes.FOLDER_NAME)
+	boardRemote = remotesFolder:WaitForChild(Remotes.Functions.GetLeaderboard) :: RemoteFunction
+
+	local worldEvent = remotesFolder:WaitForChild(Remotes.Events.WorldEvent) :: RemoteEvent
+	worldEvent.OnClientEvent:Connect(function(payload: any)
+		if type(payload) == "table" and payload.kind == "openForge" then
+			ScreenManager.setForgeOpen(true)
+		end
+	end)
+
+	local feedRemote = remotesFolder:WaitForChild(Remotes.Events.FeedMessage) :: RemoteEvent
+	feedRemote.OnClientEvent:Connect(function(payload: any)
+		if type(payload) == "table" and payload.kind == "broadcast" then
+			onBroadcast(payload)
+		end
+	end)
+
+	local raceRemote = remotesFolder:WaitForChild(Remotes.Events.RaceUpdate) :: RemoteEvent
+	raceRemote.OnClientEvent:Connect(onRaceUpdate)
+
+	ClientState.onChanged(function()
+		refreshPreview()
+		local language = ClientState.getLanguage()
+		if language ~= lastLanguage then
+			lastLanguage = language
+			for _, refresh in textRefreshers do
+				pcall(refresh)
+			end
+		end
+	end)
+
+	local player = Players.LocalPlayer
+	player.CharacterAdded:Connect(function(character)
+		task.spawn(spawnSparkle, character)
+	end)
+end
+
+function WorldFxController.Start()
+	task.spawn(function()
+		local found = Workspace:WaitForChild(World.LOBBY_FOLDER, 60)
+		if found == nil then
+			warn("[WorldFxController] 로비를 찾지 못했습니다")
+			return
+		end
+		lobby = found
+		-- 서버가 다 지은 뒤 복제되도록 잠깐 기다린다
+		task.wait(1)
+		setupForge(found)
+		setupTreadmills(found)
+		setupGate(found)
+		setupSigns(found)
+		setupHonor(found)
+		setupShowcase(found)
+	end)
+
+	local last = os.clock()
+	RunService.RenderStepped:Connect(function()
+		local now = os.clock()
+		local dt = math.min(0.1, now - last)
+		last = now
+
+		local ok, err = pcall(function()
+			if lobby and lobbyNearby() then
+				stepForge(now, dt)
+				stepTreadmills(now, dt)
+				stepGate(now)
+				stepShowcase(now)
+			end
+			stepCourse(now)
+			stepPreview(now)
+		end)
+		if not ok then
+			warn(`[WorldFxController] 연출 오류: {err}`)
+		end
+	end)
+
+	-- 연출 중 바뀐 레벨을 미리보기에 반영 (공개 시점에 맞춰)
+	task.spawn(function()
+		while true do
+			task.wait(0.25)
+			refreshPreview()
+		end
+	end)
+end
+
+return WorldFxController
+]]></string>
+            </Properties>
+          </Item>
         </Item>
-        <Item class="Folder" referent="66">
+        <Item class="Folder" referent="70">
           <Properties>
             <string name="Name">ui</string>
           </Properties>
-          <Item class="ModuleScript" referent="67">
+          <Item class="ModuleScript" referent="71">
             <Properties>
               <string name="Name">Components</string>
               <string name="Source"><![CDATA[--!strict
@@ -15485,7 +18968,7 @@ return Components
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="68">
+          <Item class="ModuleScript" referent="72">
             <Properties>
               <string name="Name">ForgeLayout</string>
               <string name="Source"><![CDATA[--!strict
@@ -15539,7 +19022,7 @@ return ForgeLayout
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="69">
+          <Item class="ModuleScript" referent="73">
             <Properties>
               <string name="Name">ScreenManager</string>
               <string name="Source"><![CDATA[--!strict
@@ -15844,7 +19327,7 @@ return ScreenManager
 ]]></string>
             </Properties>
           </Item>
-          <Item class="ModuleScript" referent="70">
+          <Item class="ModuleScript" referent="74">
             <Properties>
               <string name="Name">Theme</string>
               <string name="Source"><![CDATA[--!strict
@@ -15964,13 +19447,13 @@ return Theme
       </Item>
     </Item>
   </Item>
-  <Item class="TextChatService" referent="71">
+  <Item class="TextChatService" referent="75">
     <Properties>
       <string name="Name">TextChatService</string>
       <token name="ChatVersion">1</token>
     </Properties>
   </Item>
-  <Item class="Workspace" referent="72">
+  <Item class="Workspace" referent="76">
     <Properties>
       <string name="Name">Workspace</string>
       <bool name="FilteringEnabled">true</bool>

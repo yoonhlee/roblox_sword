@@ -26,6 +26,7 @@ local CONTROLLER_ORDER = {
 	"LobbyController",
 	"RaceController",
 	"UIController",
+	"WorldFxController",
 }
 
 local controllersFolder = script:WaitForChild("controllers")

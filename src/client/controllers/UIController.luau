@@ -695,6 +695,15 @@ function UIController.getPreviewSlot(): Frame
 	return previewSlot
 end
 
+-- 지금 화면에 보이는 레벨 (강화 연출 중에는 공개 전 레벨). 미리보기 검 색을 맞추는 데 쓴다.
+function UIController.getDisplayLevel(): number
+	if revealLevel then
+		return revealLevel
+	end
+	local sword = ClientState.getEquipped()
+	return if sword then sword.level else 0
+end
+
 function UIController.Start()
 	-- 접속 직후 현재 상태를 한 번 받아 온다 (프로필 로드가 아직 끝나지 않았을 수 있어 잠시 재시도).
 	task.spawn(function()
